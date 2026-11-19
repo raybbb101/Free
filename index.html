@@ -1,0 +1,197 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Patrol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#f6e6cf;--dim:#b9a6bd;--bg:#140f1e;--accent:#f6c27a;--line:rgba(246,230,207,.16)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);overflow:hidden;color:var(--ink);font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;-webkit-user-select:none;user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent}
+canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+#gl{cursor:none}
+#ui{pointer-events:none}
+#strip{position:fixed;left:0;right:0;top:0;height:28px;display:flex;align-items:center;gap:16px;padding:0 14px;background:rgba(18,13,27,.66);border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.03em;color:var(--dim);opacity:0;transition:opacity .9s;z-index:3;white-space:nowrap}
+#strip.on{opacity:1}
+#hints{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#hints b{color:var(--ink);font-weight:500}
+#hints .s{opacity:.35;margin:0 7px}
+#view{color:var(--accent);font-weight:600;letter-spacing:.08em}
+#msl{display:flex;align-items:center;gap:5px}
+#msl span{margin-right:3px}
+#msl i{display:block;width:4px;height:13px;background:var(--ink);border-top:3px solid #e0604a;transition:opacity .2s}
+#msl i.off{opacity:.18}
+#snd,#fs{font:inherit;font-size:11px;color:var(--ink);background:transparent;border:1px solid rgba(246,230,207,.3);padding:3px 9px;cursor:pointer;letter-spacing:.06em;pointer-events:auto}
+#snd:hover,#fs:hover{border-color:var(--ink)}
+#snd.on{color:#1b1322;background:var(--accent);border-color:var(--accent)}
+#title{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:4;pointer-events:none;transition:opacity 1.4s ease}
+#card{width:100%;display:flex;flex-direction:column;align-items:center;gap:16px;padding:34px 16px 30px;background:rgba(24,16,36,.5);border-top:2px solid rgba(251,230,184,.22);border-bottom:2px solid rgba(251,230,184,.22)}
+#title.gone{opacity:0}
+#title h1{font-family:Silkscreen,monospace;font-weight:700;font-size:min(18vw,120px);letter-spacing:.05em;color:#fbe6b8;line-height:1;text-shadow:0 .06em 0 #7a4468,0 .12em 0 rgba(22,14,32,.55)}
+#title .sub{font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:#fbe6b8;opacity:.85;text-shadow:0 1px 0 #2a1a30}
+#bar{width:min(64vw,280px);height:12px;border:2px solid #fbe6b8;padding:2px;margin-top:8px;box-shadow:0 2px 0 #2a1a30}
+#bar div{height:100%;width:0;background:#f6c27a}
+#prompt{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#fff3d8;text-shadow:0 1px 0 #2a1a30;min-height:16px}
+#prompt.blink{animation:bl 1.4s steps(2,end) infinite}
+@keyframes bl{50%{opacity:.25}}
+#touch{display:none;position:fixed;right:10px;bottom:10px;gap:8px;z-index:3;flex-wrap:wrap;justify-content:flex-end;max-width:200px}
+#touch.on{display:flex}
+#touch button{width:62px;height:46px;font:600 11px "IBM Plex Mono",monospace;letter-spacing:.08em;color:var(--ink);background:rgba(18,13,27,.6);border:2px solid rgba(246,230,207,.45);touch-action:none}
+#touch button.hot{background:var(--accent);color:#1b1322}
+#touch button.lit{background:#6ce07c;border-color:#6ce07c;color:#1b1322}
+#err{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);max-width:420px;padding:18px;background:#1c1428;border:2px solid #e0604a;font-size:12px;display:none;z-index:9}
+</style>
+<canvas id="gl"></canvas>
+<canvas id="ui"></canvas>
+<div id="strip">
+  <div id="hints"><b>Mouse</b> steer<span class="s">·</span><b>Click</b> roll<span class="s">·</span><b>Hold</b> burner<span class="s">·</span><b>Right-click / F</b> missile<span class="s">·</span><b>Space</b> view</div>
+  <div id="view">CHASE</div>
+  <div id="msl"><span>MSL</span><i></i><i></i><i></i><i></i></div>
+  <button id="fs" type="button">FULLSCREEN</button>
+  <button id="snd" type="button">SOUND OFF</button>
+  <script>
+  (() => {
+    const b = document.getElementById('fs'), de = document.documentElement;
+    const req = de.requestFullscreen || de.webkitRequestFullscreen;
+    if (!req) { b.style.display = 'none'; return; }
+    const cur = () => document.fullscreenElement || document.webkitFullscreenElement;
+    const sync = () => { b.textContent = cur() ? 'EXIT FULL' : 'FULLSCREEN'; };
+    b.addEventListener('click', e => {
+      e.stopPropagation(); b.blur();
+      try {
+        if (cur()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        else { const p = req.call(de); if (p && p.catch) p.catch(() => {}); }
+      } catch (_) {}
+    });
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+  })();
+  </script>
+</div>
+<div id="title"><div id="card">
+  <h1>PATROL</h1>
+  <div class="sub">Lake country &middot; last light</div>
+  <div id="bar"><div></div></div>
+  <div id="prompt">Shaping the land&hellip;</div>
+</div></div>
+<div id="touch">
+  <button data-k="roll">ROLL</button><button data-k="burn">BURN</button><button data-k="fire">FIRE</button><button data-k="view">VIEW</button><button data-k="tilt" id="tiltBtn">TILT</button>
+</div>
+<div id="err"></div>
+<script>
+(() => {
+'use strict';
+
+/* =========================================================================
+   Constants
+   ========================================================================= */
+const Q = new URLSearchParams(location.search);
+const N = 1024, CELL = 10, WORLD = N * CELL;          // terrain tile: 10.24 km
+const CN = 512, CLOUD_W = 9000, CB = 1150, CT = 300;  // cloud tile + layer
+const DEG = Math.PI / 180;
+const NEAR = 0.5, FAR = 60000;
+const SUN = (() => { const el = 14 * DEG, az = 245 * DEG; return [Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az)]; })();
+const SHD = (() => { const h = Math.hypot(SUN[0], SUN[2]); const v = [SUN[0] / h * 0.45, 1, SUN[2] / h * 0.45]; const l = Math.hypot(v[0], v[1], v[2]); return v.map(a => a / l); })();
+
+const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const smoother = t => { t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 15) + 10); };
+const wrapPI = a => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
+const rnd = (a = 0, b = 1) => a + Math.random() * (b - a);
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const len = a => Math.hypot(a[0], a[1], a[2]);
+const norm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const bay = (x, y) => (BAYER[(x & 3) + (y & 3) * 4] + 0.5) / 16;
+const hex3 = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+
+/* =========================================================================
+   Terrain generation worker (tiling noise, shadows, clouds)
+   ========================================================================= */
+const WORKER_SRC = `
+const G = new Float32Array(512);
+for (let i = 0; i < 256; i++) { const a = i / 256 * Math.PI * 2; G[i*2] = Math.cos(a); G[i*2+1] = Math.sin(a); }
+function hh(x, y, s) { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 982451653)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return h >>> 0; }
+function gn(x, y, P, s) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const x0 = ((ix % P) + P) % P, y0 = ((iy % P) + P) % P, x1 = (x0 + 1) % P, y1 = (y0 + 1) % P;
+  const ux = fx*fx*fx*(fx*(fx*6-15)+10), uy = fy*fy*fy*(fy*(fy*6-15)+10);
+  let g = (hh(x0, y0, s) & 255) * 2; const n00 = G[g]*fx + G[g+1]*fy;
+  g = (hh(x1, y0, s) & 255) * 2; const n10 = G[g]*(fx-1) + G[g+1]*fy;
+  g = (hh(x0, y1, s) & 255) * 2; const n01 = G[g]*fx + G[g+1]*(fy-1);
+  g = (hh(x1, y1, s) & 255) * 2; const n11 = G[g]*(fx-1) + G[g+1]*(fy-1);
+  const a = n00 + (n10 - n00) * ux, b = n01 + (n11 - n01) * ux; return (a + (b - a) * uy) * 1.42;
+}
+function fbm(u, v, P, oct, s) { let sum = 0, amp = 1, nrm = 0; for (let o = 0; o < oct; o++) { sum += gn(u*P, v*P, P, s + o*17) * amp; nrm += amp; amp *= 0.5; P *= 2; } return sum / nrm; }
+function ridged(u, v, P, oct, s) { let sum = 0, amp = 1, nrm = 0, w = 1; for (let o = 0; o < oct; o++) { let n = 1 - Math.abs(gn(u*P, v*P, P, s + o*31)); n *= n; n *= w; w = Math.min(1, Math.max(0, n * 1.7)); sum += n * amp; nrm += amp; amp *= 0.5; P *= 2; } return sum / nrm; }
+function sstep(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+function heightRows(N, y0, y1) {
+  const out = new Float32Array((y1 - y0) * N * 4);
+  for (let y = y0; y < y1; y++) {
+    for (let x = 0; x < N; x++) {
+      const u = (x + 0.5) / N, v = (y + 0.5) / N;
+      const wx = fbm(u, v, 3, 3, 101) * 0.055, wy = fbm(u, v, 3, 3, 202) * 0.055;
+      const uu = u + wx, vv = v + wy;
+      const cont = fbm(uu, vv, 2, 3, 1);
+      const hills = fbm(uu, vv, 6, 6, 2);
+      const mm = sstep(0.02, 0.42, fbm(u, v, 2, 2, 3) + 0.08);
+      const rg = ridged(uu, vv, 5, 5, 4);
+      const h = cont * 210 + hills * 125 + mm * rg * rg * 1150 + mm * 110;
+      const i = ((y - y0) * N + x) * 4;
+      out[i] = h; out[i+1] = fbm(u, v, 14, 4, 21); out[i+2] = fbm(u, v, 20, 3, 22) * 0.5 + 0.5; out[i+3] = 1;
+    }
+    if ((y & 7) === 7) postMessage({ type: 'p', n: 8 });
+  }
+  return out;
+}
+function bumps(u, v, P, s) {
+  const x = u * P, y = v * P, ix = Math.floor(x), iy = Math.floor(y); let m = 0;
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+    const cx = ix + i, cy = iy + j, wx = ((cx % P) + P) % P, wy = ((cy % P) + P) % P, h = hh(wx, wy, s);
+    const px = cx + 0.2 + ((h & 255) / 255) * 0.6, py = cy + 0.2 + (((h >>> 8) & 255) / 255) * 0.6;
+    const r = 0.42 + (((h >>> 16) & 255) / 255) * 0.42;
+    const dx = x - px, dy = y - py, q = 1 - (dx*dx + dy*dy) / (r*r);
+    else slowFor = 0;
+  }
+}
+
+/* =========================================================================
+   Boot
+   ========================================================================= */
+const barEl = document.querySelector('#bar div');
+resize();
+requestAnimationFrame(frame);
+generateWorld(p => { barEl.style.width = (p * 100).toFixed(1) + '%'; })
+  .then(({ tex, cloud }) => {
+    promptEl.textContent = 'Warming the engines…';
+    uploadWorld(tex, cloud); window.__cloud = cloud;
+    // start over a lake shore if one is close by
+    let best = null;
+    for (let i = 0; i < 400; i++) { const x = (i * 97.3 % 1) * WORLD, z = (i * 61.7 % 1) * WORLD; const a = hAt(x, z), b = hAt(x + 600, z), c = hAt(x, z + 600); if (a < -2 && (b > 20 || c > 20)) { best = [x, z]; break; } }
+    if (best) { J.x = best[0]; J.z = best[1]; } else { J.x = WORLD * .3; J.z = WORLD * .6; }
+    J.y = J.holdAlt = Math.max(1750, hAt(J.x, J.z) + 700);
+    J.b = ypr(J.yaw, 0, 0); J.r = [J.x, J.y, J.z]; chase.yaw = J.yaw;
+    for (let i = 0; i < 30; i++) step(1 / 60);
+    ready = true; barEl.style.width = '100%';
+    document.getElementById('bar').style.display = 'none';
+    promptEl.textContent = matchMedia('(pointer: coarse)').matches ? 'Touch to take the stick' : 'Move the mouse to take the stick'; promptEl.classList.add('blink');
+    stripEl.classList.add('on'); updateMslUI();
+    last = performance.now();
+  })
+  .catch(err => { console.error(err); fatal('Could not build the world: ' + err.message); });
+
+window.addEventListener('error', () => simErrors++);
+window.__patrol = {
+  get ready() { return ready; },
+  state: () => ({ W, H, level, view, fps: fpsEMA, jet: { x: J.x, y: J.y, z: J.z, yaw: J.yaw, pitch: J.pitch, bank: J.bank, speed: J.speed, ralt: J.ralt }, particles: PA.n, missiles: MIS.length, booms: BOOMS.length, palette: PALD && PALD.n, maxH: MAXH, errors: simErrors }),
+  setView(v) { while (view !== v) cycleView(); blend.t = 1; },
+  fire, barrelRoll, explode, takeControl,
+  place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
+  hAt: (x, z) => hAt(x, z), J, input,
+  dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
+};
+})();
+</script>
+
+</body></html>
