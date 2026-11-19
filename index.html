@@ -209,23 +209,61 @@ function hAt(x, z) {
   const t = a + (b - a) * fu, s = c + (d - c) * fu; return t + (s - t) * fv;
 }
 
-async function generateWorld(onProgress) {
+// Background workers build the world; if they can't start or stall (some phone
+// browsers block them), the same code runs on the main page in small slices.
+function workerEngine(onProgress) {
   const nW = clamp(navigator.hardwareConcurrency || 4, 2, 8);
   const url = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' }));
   const workers = []; for (let i = 0; i < nW; i++) workers.push(new Worker(url));
-  const run = (jobs, total, base, span) => new Promise((res, rej) => {
-    let next = 0, done = 0, units = 0; const out = [];
-    const feed = w => { if (next >= jobs.length) return; w._job = next++; w.postMessage(jobs[w._job]); };
-    for (const w of workers) {
-      w.onmessage = e => {
-        const m = e.data;
-        if (m.type === 'p') { units += m.n; onProgress(base + span * Math.min(1, units / total)); }
-        else { out[w._job] = m; if (++done === jobs.length) res(out); else feed(w); }
-      };
-      w.onerror = ev => rej(new Error('worker: ' + (ev.message || 'failed')));
-      feed(w);
-    }
-  });
+  return {
+    run: (jobs, total, base, span) => new Promise((res, rej) => {
+      let next = 0, done = 0, units = 0, alive = false; const out = [];
+      const dog = setTimeout(() => { if (!alive) rej(new Error('workers stalled')); }, 6000);
+      const feed = w => { if (next >= jobs.length) return; w._job = next++; w.postMessage(jobs[w._job]); };
+      for (const w of workers) {
+        w.onmessage = e => {
+          alive = true; const m = e.data;
+          if (m.type === 'p') { units += m.n; onProgress(base + span * Math.min(1, units / total)); }
+          else { out[w._job] = m; if (++done === jobs.length) { clearTimeout(dog); res(out); } else feed(w); }
+        };
+        w.onerror = ev => { clearTimeout(dog); rej(new Error('worker: ' + (ev.message || 'failed'))); };
+        feed(w);
+      }
+    }),
+    setH: hs => { for (const w of workers) w.postMessage({ kind: 'setH', H: hs }); },
+    close: () => { for (const w of workers) w.terminate(); URL.revokeObjectURL(url); }
+  };
+}
+function localEngine(onProgress) {
+  const L = new Function('postMessage', 'let onmessage;\n' + WORKER_SRC + '\nreturn { heightRows, cloudMap, shadowRows, setH: h => { H = h; } };')(() => {});
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  return {
+    run: async (jobs, total, base, span) => {
+      const out = []; let units = 0;
+      for (const j of jobs) {
+        if (j.kind === 'height') { out.push({ y0: j.y0, data: L.heightRows(j.N, j.y0, j.y1) }); units += j.y1 - j.y0; }
+        else if (j.kind === 'cloud') { out.push({ cloud: true, data: L.cloudMap(j.CN) }); units += 32; }
+        else if (j.kind === 'shadow') { out.push({ y0: j.y0, data: L.shadowRows(j.N, j.cell, j.y0, j.y1, j.sx, j.sz, j.tanE, j.maxH) }); units += j.y1 - j.y0; }
+        onProgress(base + span * Math.min(1, units / total)); await tick();
+      }
+      return out;
+    },
+    setH: hs => L.setH(hs),
+    close: () => {}
+  };
+}
+async function generateWorld(onProgress) {
+  let eng = null;
+  try { eng = workerEngine(onProgress); return await buildWorld(eng, onProgress); }
+  catch (err) {
+    console.warn('Falling back to main-thread world build:', err);
+    try { eng && eng.close(); } catch (_) {}
+    onProgress(0);
+    return await buildWorld(localEngine(onProgress), onProgress);
+  }
+}
+async function buildWorld(eng, onProgress) {
+  const run = eng.run;
   // phase 1: height + materials, clouds
   const jobs = []; const BL = 32;
   for (let y = 0; y < N; y += BL) jobs.push({ kind: 'height', N, y0: y, y1: y + BL });
@@ -247,13 +285,12 @@ async function generateWorld(onProgress) {
   onProgress(0.64);
   // phase 2: long baked sun shadows
   const sh = Math.hypot(SUN[0], SUN[2]);
-  for (const w of workers) w.postMessage({ kind: 'setH', H: hs });
+  eng.setH(hs);
   const jobs2 = []; const BL2 = 32;
   for (let y = 0; y < N; y += BL2) jobs2.push({ kind: 'shadow', N, cell: CELL, y0: y, y1: y + BL2, sx: SUN[0] / sh, sz: SUN[2] / sh, tanE: SUN[1] / sh, maxH: mx + 5 });
   const r2 = await run(jobs2, N, 0.64, 0.33);
   for (const r of r2) { const d = r.data, base = r.y0 * N; for (let i = 0; i < d.length; i++) tex[(base + i) * 4 + 3] = d[i]; }
-  for (const w of workers) w.terminate();
-  URL.revokeObjectURL(url);
+  eng.close();
   return { tex, cloud };
 }
 
