@@ -30,6 +30,27 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
 #title{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:4;pointer-events:none;transition:opacity 1.4s ease}
 #card{width:100%;display:flex;flex-direction:column;align-items:center;gap:16px;padding:34px 16px 30px;background:rgba(24,16,36,.5);border-top:2px solid rgba(251,230,184,.22);border-bottom:2px solid rgba(251,230,184,.22)}
 #title.gone{opacity:0}
+#title.gone #menu{display:none}
+#title.compact h1{font-size:min(9vw,46px)}
+#title.compact .sub{display:none}
+#title.compact #card{gap:8px;padding:14px 16px 14px}
+#title.compact #lCode{font-size:34px}
+#menu{pointer-events:auto;margin-top:4px;display:flex;flex-direction:column;align-items:center}
+#menu .mrow{display:flex;gap:10px;align-items:center;justify-content:center}
+#menu .mcol{display:flex;flex-direction:column;gap:9px;align-items:center}
+#menu button{font:600 13px "IBM Plex Mono",monospace;letter-spacing:.14em;color:#1b1322;background:#fbe6b8;border:none;padding:11px 20px;cursor:pointer;box-shadow:0 3px 0 #7a4468;min-width:150px}
+#menu button:active{transform:translateY(2px);box-shadow:0 1px 0 #7a4468}
+#menu button.sm{background:transparent;color:#fbe6b8;box-shadow:none;border:1px solid rgba(251,230,184,.4);min-width:0;padding:7px 14px;font-size:11px}
+#menu input{font:600 15px "IBM Plex Mono",monospace;letter-spacing:.2em;text-transform:uppercase;text-align:center;color:#fbe6b8;background:rgba(10,7,16,.7);border:2px solid rgba(251,230,184,.5);padding:9px 10px;width:190px;outline:none;-webkit-user-select:text;user-select:text}
+#menu #mCode{width:110px}
+#menu input:focus{border-color:#fbe6b8}
+#menu .lbl{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:#fbe6b8;opacity:.75}
+#menu .msg{font-size:12px;color:#ffb0a0;min-height:15px;text-align:center;max-width:300px}
+#lCode{font-family:Silkscreen,monospace;font-size:44px;letter-spacing:.18em;color:#fff3d8;text-shadow:0 3px 0 #7a4468;-webkit-user-select:text;user-select:text}
+#lList{display:flex;flex-direction:column;gap:4px;min-width:200px;font-size:13px;letter-spacing:.1em}
+#lList div{display:flex;align-items:center;gap:8px;color:#fbe6b8}
+#lList i{width:10px;height:10px;display:block}
+#net{color:#6ce07c;font-weight:600;letter-spacing:.08em}
 #title h1{font-family:Silkscreen,monospace;font-weight:700;font-size:min(18vw,120px);letter-spacing:.05em;color:#fbe6b8;line-height:1;text-shadow:0 .06em 0 #7a4468,0 .12em 0 rgba(22,14,32,.55)}
 #title .sub{font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:#fbe6b8;opacity:.85;text-shadow:0 1px 0 #2a1a30}
 #bar{width:min(64vw,280px);height:12px;border:2px solid #fbe6b8;padding:2px;margin-top:8px;box-shadow:0 2px 0 #2a1a30}
@@ -48,6 +69,7 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
 <canvas id="ui"></canvas>
 <div id="strip">
   <div id="hints"><b>Mouse</b> steer<span class="s">·</span><b>Click</b> roll<span class="s">·</span><b>Hold</b> burner<span class="s">·</span><b>Right-click / F</b> missile<span class="s">·</span><b>Space</b> view</div>
+  <div id="net"></div>
   <div id="view">CHASE</div>
   <div id="msl"><span>MSL</span><i></i><i></i><i></i><i></i></div>
   <button id="fs" type="button">FULLSCREEN</button>
@@ -76,6 +98,25 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
   <div class="sub">Lake country &middot; last light</div>
   <div id="bar"><div></div></div>
   <div id="prompt">Shaping the land&hellip;</div>
+  <div id="menu" hidden>
+    <div class="mrow" id="mMain"><button data-a="solo">SOLO</button><button data-a="multi">MULTIPLAYER</button></div>
+    <div class="mcol" id="mMulti" hidden>
+      <input id="mName" maxlength="10" placeholder="YOUR NAME" autocomplete="off" spellcheck="false">
+      <button data-a="host">HOST A ROOM</button>
+      <div class="lbl">or join a friend</div>
+      <div class="mrow"><input id="mCode" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false"><button data-a="join">JOIN</button></div>
+      <div class="msg" id="mMsg"></div>
+      <button data-a="back" class="sm">BACK</button>
+    </div>
+    <div class="mcol" id="mLobby" hidden>
+      <div class="lbl">ROOM CODE</div><div id="lCode">&middot;&middot;&middot;&middot;&middot;</div>
+      <div class="lbl" id="lHint">Send this code to your friends</div>
+      <div id="lList"></div>
+      <div class="msg" id="lMsg"></div>
+      <button data-a="start" id="bStart">START</button>
+      <button data-a="leave" class="sm">LEAVE</button>
+    </div>
+  </div>
 </div></div>
 <div id="touch">
   <button data-k="roll">ROLL</button><button data-k="burn">BURN</button><button data-k="fire">FIRE</button><button data-k="view">VIEW</button><button data-k="tilt" id="tiltBtn">TILT</button>
@@ -242,6 +283,78 @@ const VOLCS = [];
 function texIdx(x, z) { const M = N - 1; return ((Math.floor(z / CELL) & M) * N) + (Math.floor(x / CELL) & M); }
 function surfaceAt(x, z) { if (!BIO) return 'land'; const i = texIdx(x, z); if (HM[i] >= 0) return 'land'; if (BIO[i * 4 + 1] > 128) return 'lava'; if (BIO[i * 4] > 128) return 'ice'; return 'water'; }
 let HM = null;       // CPU height field (Float32, N*N)
+let TEXC = null;     // CPU copy of the terrain texture (height, forest, colour noise, shadow)
+function chan(x, z, c) {
+  const u = x / CELL - 0.5, v = z / CELL - 0.5, iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv, M = N - 1;
+  const x0 = iu & M, y0 = iv & M, x1 = (x0 + 1) & M, y1 = (y0 + 1) & M;
+  const a = TEXC[(y0 * N + x0) * 4 + c], b = TEXC[(y0 * N + x1) * 4 + c], e = TEXC[(y1 * N + x0) * 4 + c], f = TEXC[(y1 * N + x1) * 4 + c];
+  const t = a + (b - a) * fu, s = e + (f - e) * fu; return t + (s - t) * fv;
+}
+function hashJ(x, y, s) { let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(s, 982451653)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; }
+function vnJ(x, z, s) { const ix = Math.floor(x), iz = Math.floor(z); let fx = x - ix, fz = z - iz; fx = fx * fx * (3 - 2 * fx); fz = fz * fz * (3 - 2 * fz);
+  const a = hashJ(ix, iz, s), b = hashJ(ix + 1, iz, s), c = hashJ(ix, iz + 1, s), d = hashJ(ix + 1, iz + 1, s); return a + (b - a) * fx + (c - a) * fz + (a - b - c + d) * fx * fz; }
+function biomeAt(x, z) { const i = texIdx(x, z) * 4, wi = BIO[i], wv = BIO[i + 1], wf = BIO[i + 2], wa = 255 - wi - wv - wf; let b = 0, m = wa; if (wi > m) { m = wi; b = 1; } if (wv > m) { m = wv; b = 2; } if (wf > m) b = 3; return b; }
+const AUT = ['#f08838', '#c83840', '#f0c040'].map(hex3), CONC = hex3('#3c5844'), TRUNK = hex3('#6c4c38'), WALL = hex3('#f0e0c0');
+const ROOFS = ['#c84838', '#5c6678', '#8a5a34'].map(hex3), SNOWC = hex3('#fff8f0');
+const propState = { x: 1e9, z: 1e9, r: -1, force: true };
+let treeR = 0;
+function pushProp(P, x, y, z, s, r, A, B) { if (P.count >= P.max) return; const o = P.count++ * PROP_STRIDE, d = P.data; d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = s; d[o + 4] = r; d[o + 5] = A[0]; d[o + 6] = A[1]; d[o + 7] = A[2]; d[o + 8] = B[0]; d[o + 9] = B[1]; d[o + 10] = B[2]; }
+function updateProps() {
+  if (!CAM || !TEXC) return;
+  const cx = CAM.p[0], cz = CAM.p[2], alt = CAM.p[1] - Math.max(hAt(cx, cz), 0);
+  const R = clamp(1150 - alt * 1.25, 0, 650); treeR = R;
+  const moved = Math.hypot(cx - propState.x, cz - propState.z);
+  if (!propState.force && moved < 70 && Math.abs(R - propState.r) < 60) return;
+  propState.x = cx; propState.z = cz; propState.r = R; propState.force = false;
+  for (const k in PROPS) PROPS[k].count = 0;
+  // trees
+  if (R > 20) {
+    const G = 9, R2 = R * R;
+    for (let gz = Math.floor((cz - R) / G); gz <= Math.floor((cz + R) / G); gz++) for (let gx = Math.floor((cx - R) / G); gx <= Math.floor((cx + R) / G); gx++) {
+      const wx = ((gx % 1593) + 1593) % 1593, wz = ((gz % 1593) + 1593) % 1593;   // 1593*9 ~ world size, keeps hashes stable
+      const hr = hashJ(wx, wz, 7), x = (gx + .15 + hashJ(wx, wz, 8) * .7) * G, z = (gz + .15 + hashJ(wx, wz, 9) * .7) * G;
+      const dx = x - cx, dz = z - cz, dd = dx * dx + dz * dz; if (dd > R2) continue;
+      if (Math.sqrt(dd) > R - 40 * hashJ(wx, wz, 10)) continue;
+      const h = hAt(x, z); if (h < 2.5) continue;
+      const sl = Math.abs(hAt(x + 6, z) - hAt(x - 6, z)) + Math.abs(hAt(x, z + 6) - hAt(x, z - 6)); if (sl > 9) continue;
+      const b = biomeAt(x, z), fg = chan(x, z, 1), s = .8 + hashJ(wx, wz, 11) * .5, rot = hr * 6.283;
+      if (b === 0) {
+        if (fg <= -.12 || h > SNOWH * .8) { if (hr < .985) continue; }
+        else if (hr > .82) continue;
+        const conP = .1 + .5 * sstep(SNOWH * .3, SNOWH * .7, h);
+        if (hashJ(wx, wz, 12) < conP) pushProp(PROPS.con, x, h - .3, z, s, rot, CONC, TRUNK);
+        else pushProp(PROPS.dec, x, h - .3, z, s, rot, AUT[Math.floor(hashJ(wx, wz, 13) * 2.999)], TRUNK);
+      } else if (b === 1) {
+        if (fg <= .05 || h > SNOWH * .6 || hr > .62) continue;
+        pushProp(PROPS.snow, x, h - .3, z, s, rot, CONC, TRUNK);
+      } else if (b === 3) {
+        if (hr > .006) continue;
+        pushProp(PROPS.dec, x, h - .3, z, s * 1.1, rot, hashJ(wx, wz, 14) < .5 ? hex3('#3c5844') : AUT[2], TRUNK);
+      }
+    }
+  }
+  // houses in villages (further out, fewer)
+  const HR = 1800, HG = 34;
+  for (let gz = Math.floor((cz - HR) / HG); gz <= Math.floor((cz + HR) / HG); gz++) for (let gx = Math.floor((cx - HR) / HG); gx <= Math.floor((cx + HR) / HG); gx++) {
+    const wx = ((gx % 421) + 421) % 421, wz = ((gz % 421) + 421) % 421;
+    const x = (gx + .2 + hashJ(wx, wz, 21) * .6) * HG, z = (gz + .2 + hashJ(wx, wz, 22) * .6) * HG;
+    const dx = x - cx, dz = z - cz; if (dx * dx + dz * dz > HR * HR) continue;
+    const vil = sstep(.74, .88, vnJ(x / 900, z / 900, 31)); if (vil <= 0 || hashJ(wx, wz, 23) > vil * .6) continue;
+    const b = biomeAt(x, z); if (b === 2) continue;
+    const h0 = hAt(x, z); if (h0 < 4 || h0 > SNOWH * .45) continue;
+    const hs = [hAt(x + 5, z + 4), hAt(x - 5, z + 4), hAt(x + 5, z - 4), hAt(x - 5, z - 4)];
+    const lo = Math.min(...hs), hi = Math.max(...hs); if (hi - lo > 3.5) continue;
+    if (b === 0 && chan(x, z, 1) > -.12) continue;
+    const roof = b === 1 ? SNOWC : ROOFS[Math.floor(hashJ(Math.floor(x / 500), Math.floor(z / 500), 24) * 2.999)];
+    const rot = (hashJ(wx, wz, 25) > .5 ? Math.PI / 2 : 0) + (hashJ(Math.floor(x / 300), Math.floor(z / 300), 26) - .5) * .5;
+    pushProp(PROPS.house, x, lo - .2, z, .9 + hashJ(wx, wz, 27) * .35, rot, roof, WALL);
+  }
+  for (const k in PROPS) { const P = PROPS[k]; if (!P.count) continue; gl.bindBuffer(gl.ARRAY_BUFFER, P.ib); gl.bufferSubData(gl.ARRAY_BUFFER, 0, P.data, 0, P.count * PROP_STRIDE); }
+}
+function drawProps(VP, c) {
+  const pp = progProp; gl.useProgram(pp.p); gl.uniformMatrix4fv(pp.u.uVP, false, VP); gl.uniform3fv(pp.u.uSun, SUN); gl.uniform3fv(pp.u.uCam, c.p);
+  for (const k in PROPS) { const P = PROPS[k]; if (!P.count) continue; gl.bindVertexArray(P.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, P.n, P.count); }
+}
 let MAXH = 1000;
 function hAt(x, z) {
   const u = x / CELL - 0.5, v = z / CELL - 0.5;
@@ -319,7 +432,7 @@ async function buildWorld(eng, onProgress) {
     const b = r.bio, o = r.y0 * N;
     for (let k = 0, n = b.length / 5; k < n; k++) { const q = (o + k) * 4; bio[q] = b[k*5]; bio[q+1] = b[k*5+1]; bio[q+2] = b[k*5+2]; bio[q+3] = b[k*5+3]; reg[o + k] = b[k*5+4]; }
   }
-  BIO = bio; REG = reg;
+  BIO = bio; REG = reg; TEXC = tex;
   // shape: put ~33% under water, shallow lakes, subtle terraces
   const hs = new Float32Array(N * N); for (let i = 0; i < N * N; i++) hs[i] = tex[i * 4];
   const sorted = hs.slice().sort(); const off = sorted[Math.floor(N * N * 0.33)];
@@ -396,6 +509,7 @@ layout(location=0) out vec4 oC;
 layout(location=1) out vec4 oA;
 uniform sampler2D uH, uCl, uB;
 uniform vec4 uVolc[4];
+uniform float uTreeR;
 uniform vec3 uCamP, uCamR, uCamU, uCamF;
 uniform vec2 uTan, uNF, uCOff;
 uniform float uT, uWorld, uCell, uMaxH, uSnow, uCB, uCT, uCW, uJV, uDbg;
@@ -532,35 +646,6 @@ vec3 shadeIce(vec3 p, vec4 tx, float t, float bay){
   if (near > 0. && h21(p.xz / 4. + floor(uT * 3.) * vec2(5., 9.)) > 1. - .003 * near * sh) c = #ffffff;
   return effects(c, p, false, bay);
 }
-// little houses in villages: returns rgb + hit flag
-vec4 houses(vec3 p, float dens, float kind){
-  vec2 cid = floor(p.xz / 30.);
-  if (h21(cid + .5) > dens) return vec4(0.);
-  vec2 ctr = (cid + .5) * 30. + (vec2(h21(cid + 3.), h21(cid + 5.)) - .5) * 10.;
-  float hw = 4. + 3. * h21(cid + 7.), hd = 3. + 1.8 * h21(cid + 13.);
-  bool swp = h21(cid + 21.) > .5;
-  vec2 s = normalize(uSun.xz);
-  vec2 q = p.xz - ctr; if (swp) q = q.yx;
-  vec2 ss = swp ? s.yx : s;
-  if (abs(q.x) < hw && abs(q.y) < hd) {
-    bool lit = q.y * ss.y > 0.;
-    vec3 L, D;
-    float r = h21(floor(p.xz / 400.) + 2.);
-    if (kind > 1.5) { L = #fff8f0; D = #9890c0; }
-    else if (r < .55) { L = #d86048; D = #8c3434; }
-    else if (r < .8) { L = #8a7a98; D = #4c4068; }
-    else { L = #e0c860; D = #a87850; }
-    vec3 c = lit ? L : D;
-    if (abs(q.y) < .7) c = D;
-    if (abs(q.x) > hw - .9 || abs(q.y) > hd - .9) c = #2a2232;
-    return vec4(c, 1.);
-  }
-  for (int i = 1; i <= 2; i++) {
-    vec2 w = (p.xz + s * float(i) * 3.5) - ctr; if (swp) w = w.yx;
-    if (abs(w.x) < hw && abs(w.y) < hd) return vec4(0., 0., 0., .5);
-  }
-  return vec4(0.);
-}
 vec3 shadeWater(vec3 p, vec3 rd, vec4 tx, float t, float bay){
   float depth = -tx.r;
   float near = smoothstep(4000., 900., t);
@@ -600,8 +685,7 @@ vec3 shadeLand(vec3 p, vec4 tx, vec4 bio, float t, float bay){
   float wI = bio.r + jb * .5, wV = bio.g + jb * .5, wF = bio.b + jb * .5, wA = 1. - bio.r - bio.g - bio.b + jb * .5;
   float biome = 0.; float bm = wA;
   if (wI > bm) { bm = wI; biome = 1.; } if (wV > bm) { bm = wV; biome = 2.; } if (wF > bm) { bm = wF; biome = 3.; }
-  float dens = smoothstep(.52, .72, vn(p.xz / 650.)) * step(slope, .12) * step(4., h) * step(h, uSnow * .45);
-  vec4 hs = vec4(0.);
+  float camD = length(p.xz - uCamP.xz), nearT = camD < uTreeR - 40. * bay ? 1. : 0.;
   // lava in craters and rivers
   if (biome == 2.) {
     for (int i = 0; i < 4; i++) {
@@ -620,14 +704,8 @@ vec3 shadeLand(vec3 p, vec4 tx, vec4 bio, float t, float bay){
   }
   else if (biome == 1.) {
     if (slope > .45) { L = #b8d8e8; M = #8a7a98; D = #4c4068; lv += jit * .5; }
-    else if (tx.g + (nz - .5) * .3 > .05 && h < uSnow * .6) {
-      vec2 kc = p.xz / 6., ki = floor(kc), kf = fract(kc) - .5 - (vec2(h21(ki + 3.), h21(ki + 11.)) - .5) * .4;
-      float cr = length(kf);
-      if (cr < .34) { L = #3c5844; M = #2a4038; D = #1a2430; lv += (.42 - cr) * .9 * near; if (near > .25 && length(kf + vec2(.1, -.1)) < .13) { L = #fff8f0; M = #e0d8f0; } }
-      else { L = #fff8f0; M = #e0d8f0; D = #9890c0; }
-    }
+    else if (nearT < .5 && tx.g + (nz - .5) * .3 > .05 && h < uSnow * .6 && vn(p.xz / 14.) + (bay - .5) * .25 > .46) { L = #3c5844; M = #2a4038; D = #1a2430; }
     else { L = #fff8f0; M = #e0d8f0; D = #9890c0; }
-    hs = houses(p, dens * .3, 2.);
   }
   else if (biome == 3. && slope < .3 && h < uSnow * .6 && !(h < 2.2 + nz * 3.)) {
     vec2 fc = p.xz / 150., fi = floor(fc + vn(p.xz / 300.) * .3), ff = fract(fc + vn(p.xz / 300.) * .3);
@@ -638,9 +716,7 @@ vec3 shadeLand(vec3 p, vec4 tx, vec4 bio, float t, float bay){
     else if (fr < .65) { L = #a87850; M = #6c4c38; D = #4c4058; }
     else { L = #b8cc70; M = #8cac58; D = #4c6440; }
     if (near > .2 && rows < .25 && fr < .65) lv -= .5;
-    if (edge < 3.5 && h21(floor(p.xz / 5.)) < .7) { vec2 tc = fract(p.xz / 5.) - .5; L = #7ca048; M = #4c6c38; D = #2a4038; lv += (.4 - length(tc)) * near; }
-    else if (edge < 1.2) { L = #c0b070; M = #a8a060; D = #6c6464; }
-    hs = houses(p, dens * .55, 0.);
+    if (edge < 2.5) { L = #7ca048; M = #4c6c38; D = #2a4038; }
   }
   else if (h < 2.2 + nz * 3. && slope < .3) { L = #f0d8a8; M = #d8b888; D = #9a7c80; }
   else if (h > uSnow + nz * 70. && slope < .55) { L = #fff8f0; M = #e0d8f0; D = #9890c0; }
@@ -648,7 +724,8 @@ vec3 shadeLand(vec3 p, vec4 tx, vec4 bio, float t, float bay){
   else {
     float forest = tx.g + (nz - .5) * .3;
     float altF = smoothstep(uSnow * .86, uSnow * .62, h);
-    if (forest > -.12 && altF > .35) {
+    if (nearT > .5 && tx.g > -.12 && altF > .35) { L = #9a7c80; M = #6c4c38; D = #4c1c38; lv -= .25; }
+    else if (forest > -.12 && altF > .35) {
       float conP = .1 + .5 * smoothstep(uSnow * .3, uSnow * .7, h) + (1. - altF) * .4;
       vec2 kc = p.xz / 7., ki = floor(kc), kf = fract(kc) - .5 - (vec2(h21(ki + 3.), h21(ki + 11.)) - .5) * .4;
       bool con = near > .25 ? (h21(ki + vec2(17., 3.)) < conP && length(kf) < .3 + .14 * h21(ki + 5.)) : h21(ki + vec2(17., 3.)) < conP * .55;
@@ -666,14 +743,9 @@ vec3 shadeLand(vec3 p, vec4 tx, vec4 bio, float t, float bay){
       lv += jit * .35;
       if (nz + tx.b * .5 > .72) { L = #d0c080; M = #a8a060; D = #6c6464; }
       else { L = #e0d098; M = #c0b070; D = #7c7068; }
-      vec2 sc = p.xz / 11., si = floor(sc), sf = fract(sc) - .5 - (vec2(h21(si + 2.), h21(si + 4.)) - .5) * .5;
-      if (h21(si + 9.) < .16 && length(sf) < .32) { float cs = h21(si + 17.); if (cs < .4) { L = #f08838; M = #c85a28; D = #6c2c38; } else if (cs < .7) { L = #f0c040; M = #c89028; D = #6c4c38; } else { L = #3c5844; M = #2a4038; D = #1a2430; } lv += (.36 - length(sf)) * near; }
-      if (biome == 0.) hs = houses(p, dens * .35, 0.);
     }
   }
-  if (hs.a > .25 && hs.a < .75) lv = min(lv, .3);
   vec3 col = lv > 1.35 ? L : (lv > .42 ? M : D);
-  if (hs.a > .75) col = hs.rgb * (lit > .05 ? 1. : .8);
   if (near > .15 && slope > .04 && fract(h / 34.) < .07) col *= .9;
   if (bio.a > 0.) { float bd = (1. - bio.a) * 120., bw = 2.5 + t * .0025; if (bd < bw && fract((p.x + p.z) / 26.) < .55) col = #f4f0e8; }
   return effects(col, p, false, bay);
@@ -776,7 +848,7 @@ void main(){ if (vCol.a <= bayer(gl_FragCoord.xy)) discard; oC = vec4(vCol.rgb, 
 const POST_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uCol, uAux;
-uniform vec3 uPal[160];
+uniform sampler2D uPalT;
 uniform int uPalN;
 uniform float uSpread;
 uniform ivec2 uSize;
@@ -793,9 +865,9 @@ void main(){
   if (uPalN == 0) { o = vec4(c, 1.); return; }
   c += (bayer(gl_FragCoord.xy) - .5) * uSpread;
   float best = 1e9; vec3 bc = c;
-  for (int i = 0; i < 160; i++) {
+  for (int i = 0; i < 256; i++) {
     if (i >= uPalN) break;
-    vec3 q = uPal[i], d = c - q; float rm = (c.r + q.r) * .5;
+    vec3 q = texelFetch(uPalT, ivec2(i, 0), 0).rgb, d = c - q; float rm = (c.r + q.r) * .5;
     float dd = (2. + rm) * d.r * d.r + 4. * d.g * d.g + (3. - rm) * d.b * d.b;
     if (dd < best) { best = dd; bc = q; }
   }
@@ -925,6 +997,72 @@ function meshVAO(data) {
   return { vao, n: data.length / 7 };
 }
 const jetMesh = meshVAO(buildJet());
+/* ---------- 3D props (trees, houses), instanced near the camera ---------- */
+const PROP_COLS = ['#f08838', '#c83840', '#f0c040', '#3c5844', '#6c4c38', '#fff8f0', '#f0e0c0', '#c84838', '#5c6678', '#8a5a34', '#4a4058'];
+const PROP_VS = `#version 300 es
+in vec3 aP; in float aK; in vec3 iP; in vec2 iSR; in vec3 iA; in vec3 iB;
+uniform mat4 uVP;
+out vec3 vW; out vec3 vC;
+void main(){
+  float c = cos(iSR.y), s = sin(iSR.y);
+  vec3 p = aP * iSR.x; p = vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c);
+  vec3 w = iP + p; vW = w;
+  vC = aK < .5 ? iA : (aK < 1.5 ? iB : #fff8f0);
+  gl_Position = uVP * vec4(w, 1.);
+}`;
+const PROP_FS = `#version 300 es
+precision highp float;
+in vec3 vW; in vec3 vC;
+layout(location=0) out vec4 oC;
+layout(location=1) out vec4 oA;
+uniform vec3 uSun, uCam;
+void main(){
+  vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
+  if (dot(n, uCam - vW) < 0.) n = -n;
+  float l = dot(n, uSun) + n.y * .25;
+  vec3 col = l > .42 ? vC * #ffe8c8 * 1.12 : (l > .05 ? vC * .82 : vC * vec3(.55, .52, .7));
+  oC = vec4(min(col, vec3(1.)), 1.); oA = vec4(1.);
+}`;
+const progProp = program(PROP_VS, PROP_FS);
+function propBuilder() {
+  const d = [];
+  const tri = (a, b, c, k) => { for (const v of [a, b, c]) d.push(v[0], v[1], v[2], k); };
+  const quad = (a, b, c, e, k) => { tri(a, b, c, k); tri(a, c, e, k); };
+  const ring = (r, y, n, off = 0) => { const o = []; for (let i = 0; i < n; i++) { const a = (i + off) / n * Math.PI * 2; o.push([Math.cos(a) * r, y, Math.sin(a) * r]); } return o; };
+  const cone = (r, y0, y1, n, k, off = 0) => { const R = ring(r, y0, n, off); for (let i = 0; i < n; i++) { tri(R[i], R[(i + 1) % n], [0, y1, 0], k); tri(R[(i + 1) % n], R[i], [0, y0, 0], k); } };
+  const prism = (r, y0, y1, n, k) => { const A = ring(r, y0, n, .5), B = ring(r, y1, n, .5); for (let i = 0; i < n; i++) quad(A[i], A[(i + 1) % n], B[(i + 1) % n], B[i], k); };
+  const blob = (cx, cy, cz, rx, ry, n, k) => { const R = ring(rx, 0, n, .25).map(v => [v[0] + cx, cy, v[2] + cz]), T = [cx, cy + ry, cz], Bm = [cx, cy - ry * .7, cz];
+    const M = ring(rx * .72, 0, n, .75).map(v => [v[0] + cx, cy + ry * .55, v[2] + cz]);
+    for (let i = 0; i < n; i++) { const j = (i + 1) % n; tri(R[i], R[j], M[i], k); tri(R[j], M[j], M[i], k); tri(M[i], M[j], T, k); tri(R[j], R[i], Bm, k); } };
+  return { d, tri, quad, cone, prism, blob };
+}
+function buildDeciduous() { const B = propBuilder(); B.prism(.35, 0, 3.2, 4, 1); B.blob(0, 4.6, 0, 3.1, 3.2, 6, 0); B.blob(1.4, 6.2, .6, 1.8, 1.8, 5, 0); return new Float32Array(B.d); }
+function buildConifer(snow) { const B = propBuilder(); B.prism(.3, 0, 2, 4, 1); B.cone(2.9, 1.6, 6.2, 7, 0); B.cone(2.2, 4.4, 8.6, 7, 0, .5); B.cone(1.4, 7, 11.2, 6, snow ? 2 : 0); return new Float32Array(B.d); }
+function buildHouse() {
+  const B = propBuilder(), w = 4, dd = 3, h = 3.4, rh = 6.2, o = .5;
+  const P = (x, y, z) => [x, y, z];
+  B.quad(P(-w, 0, -dd), P(w, 0, -dd), P(w, h, -dd), P(-w, h, -dd), 1); B.quad(P(w, 0, dd), P(-w, 0, dd), P(-w, h, dd), P(w, h, dd), 1);
+  B.quad(P(-w, 0, dd), P(-w, 0, -dd), P(-w, h, -dd), P(-w, h, dd), 1); B.quad(P(w, 0, -dd), P(w, 0, dd), P(w, h, dd), P(w, h, -dd), 1);
+  B.tri(P(-w, h, -dd), P(-w, h, dd), P(-w, rh, 0), 1); B.tri(P(w, h, dd), P(w, h, -dd), P(w, rh, 0), 1);
+  B.quad(P(-w - o, h - .3, -dd - o), P(w + o, h - .3, -dd - o), P(w + o, rh, 0), P(-w - o, rh, 0), 0);
+  B.quad(P(w + o, h - .3, dd + o), P(-w - o, h - .3, dd + o), P(-w - o, rh, 0), P(w + o, rh, 0), 0);
+  B.prism(.45, rh - 1.5, rh + .9, 4, 1);
+  return new Float32Array(B.d);
+}
+const PROP_STRIDE = 11, MAX_TREES = 14000, MAX_HOUSES = 1200;
+function propVAO(mesh, max) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const P = progProp.p, vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW);
+  const la = gl.getAttribLocation(P, 'aP'), lk = gl.getAttribLocation(P, 'aK');
+  gl.enableVertexAttribArray(la); gl.vertexAttribPointer(la, 3, gl.FLOAT, false, 16, 0);
+  gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 1, gl.FLOAT, false, 16, 12);
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.bufferData(gl.ARRAY_BUFFER, max * PROP_STRIDE * 4, gl.DYNAMIC_DRAW);
+  const st = PROP_STRIDE * 4;
+  for (const [nm, sz, off] of [['iP', 3, 0], ['iSR', 2, 3], ['iA', 3, 5], ['iB', 3, 8]]) { const l = gl.getAttribLocation(P, nm); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, sz, gl.FLOAT, false, st, off * 4); gl.vertexAttribDivisor(l, 1); }
+  gl.bindVertexArray(null);
+  return { vao, ib, n: mesh.length / 4, data: new Float32Array(max * PROP_STRIDE), count: 0, max };
+}
+const PROPS = { dec: propVAO(buildDeciduous(), MAX_TREES), con: propVAO(buildConifer(false), MAX_TREES), snow: propVAO(buildConifer(true), MAX_TREES), house: propVAO(buildHouse(), MAX_HOUSES) };
 const misMesh = meshVAO(buildMissile());
 
 /* ---------- palette (every colour the renderer uses, plus shading tones) ---------- */
@@ -934,9 +1072,12 @@ function buildPalette() {
   const warm = hex3('#ffe8c8');
   const toHex = c => '#' + c.map(v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0')).join('');
   for (const h of Object.values(MC)) { const c = hex3(h); set.add(toHex(c.map((v, i) => v * warm[i] * 1.12))); set.add(toHex(c.map(v => v * .82))); set.add(toHex([c[0] * .55, c[1] * .52, c[2] * .7])); set.add(h); }
-  const arr = [...set].slice(0, 160);
-  const f = new Float32Array(160 * 3); arr.forEach((h, i) => f.set(hex3(h), i * 3));
-  return { f, n: arr.length };
+  for (const h of PROP_COLS) { const c = hex3(h); set.add(h); set.add(toHex(c.map((v, i) => v * warm[i] * 1.12))); set.add(toHex(c.map(v => v * .82))); set.add(toHex([c[0] * .55, c[1] * .52, c[2] * .7])); }
+  const arr = [...set].slice(0, 256);
+  const f = new Uint8Array(256 * 4); arr.forEach((h, i) => { const n = parseInt(h.slice(1), 16); f.set([n >> 16 & 255, n >> 8 & 255, n & 255, 255], i * 4); });
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, f);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  return { t, n: arr.length };
 }
 
 /* ---------- dynamic buffers ---------- */
@@ -1331,13 +1472,14 @@ function aimPoint() {
   return [x, Math.max(hAt(x, z), 0), z];
 }
 function fire() {
-  if (!ready) return;
+  if (!ready || !gameOn) return;
   const r = RAILS.find(r => r.ready);
   if (!r) { Sfx.click(); return; }
   r.ready = false; r.t = 4.5;
   const p = toWorld(J.b, J.r, designToLocal(r.p));
   const v = [J.vel[0] - J.b.U[0] * 7, J.vel[1] - J.b.U[1] * 7, J.vel[2] - J.b.U[2] * 7];
-  MIS.push({ p, v, age: 0, tgt: aimPoint(), lp: p.slice() });
+  const tgt = aimPoint(); MIS.push({ p, v, age: 0, tgt, lp: p.slice() });
+  Net.sendFire(p, v, tgt);
   Sfx.launch(); updateMslUI();
 }
 function explode(x, y, z, water) {
@@ -1447,7 +1589,7 @@ function updateJet(dt) {
   J.r = [J.x + b0.U[0] * ou + b0.R[0] * orr, J.y + b0.U[1] * ou + b0.R[1] * orr, J.z + b0.U[2] * ou + b0.R[2] * orr];
   J.fuel = clamp(J.fuel - dt * (.02 + J.ab * .3) + (J.ab < .2 ? dt * .05 : 0), 18, 100);
 }
-function barrelRoll() { if (!ready || J.rollT >= 0) return; J.rollT = 0; J.rollDir = J.tb < -.05 ? -1 : 1; Sfx.roll(); }
+function barrelRoll() { if (!ready || !gameOn || J.rollT >= 0) return; J.rollT = 0; J.rollDir = J.tb < -.05 ? -1 : 1; Sfx.roll(); }
 
 /* ---------- trails, plumes, spray ---------- */
 const TIP = [[-6.32, -.07, -5.6], [6.32, -.07, -5.6]];
@@ -1529,6 +1671,7 @@ function wrapWorld() {
   for (const b of BOOMS) { b.x += sx; b.z += sz; } for (const s of SCOR) { s.x += sx; s.z += sz; }
   for (const tr of TRAILS) for (const q of tr) { q.p[0] += sx; q.p[2] += sz; }
   if (CAM) { CAM.p[0] += sx; CAM.p[2] += sz; }
+  propState.force = true;
 }
 
 /* =========================================================================
@@ -1612,7 +1755,7 @@ function render() {
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hTex); gl.uniform1i(u.uH, 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, cTex); gl.uniform1i(u.uCl, 1);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bTex); gl.uniform1i(u.uB, 2);
-  volcU.fill(-1); VOLCS.slice(0, 4).forEach((v, i) => volcU.set([v.x, v.z, v.floor + 45, 1], i * 4)); gl.uniform4fv(u.uVolc, volcU);
+  volcU.fill(-1); VOLCS.slice(0, 4).forEach((v, i) => volcU.set([v.x, v.z, v.floor + 45, 1], i * 4)); gl.uniform4fv(u.uVolc, volcU); gl.uniform1f(u.uTreeR, treeR);
   gl.uniform3fv(u.uCamP, c.p); gl.uniform3fv(u.uCamR, b.R); gl.uniform3fv(u.uCamU, b.U); gl.uniform3fv(u.uCamF, b.F);
   const ty = Math.tan(c.fov / 2); gl.uniform2f(u.uTan, ty * aspect, ty); gl.uniform2f(u.uNF, NEAR, FAR);
   gl.uniform1f(u.uT, T % 3600); gl.uniform1f(u.uWorld, WORLD); gl.uniform1f(u.uCell, CELL); gl.uniform1f(u.uMaxH, MAXH); gl.uniform1f(u.uSnow, SNOWH);
@@ -1625,6 +1768,7 @@ function render() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // meshes
   gl.depthFunc(gl.LESS);
+  drawProps(VP, c);
   const pm = progMesh; gl.useProgram(pm.p); gl.uniformMatrix4fv(pm.u.uVP, false, VP); gl.uniform3fv(pm.u.uSun, SUN); gl.uniform3fv(pm.u.uCam, c.p);
   gl.uniform1f(pm.u.uShade, 1);
   if (showJet) {
@@ -1633,6 +1777,12 @@ function render() {
     gl.drawArrays(gl.TRIANGLES, 0, jetMesh.n);
     gl.bindVertexArray(misMesh.vao); gl.uniform3fv(pm.u.uGlow, hex3('#3c3844'));
     for (const r of RAILS) if (r.ready) { gl.uniformMatrix4fv(pm.u.uM, false, modelMat(J.b, toWorld(J.b, J.r, designToLocal(r.p)))); gl.drawArrays(gl.TRIANGLES, 0, misMesh.n); }
+  }
+  if (Net.players.size) {
+    gl.bindVertexArray(jetMesh.vao);
+    for (const [, pl] of Net.players) { const q = pl.d; if (!q) continue;
+      gl.uniformMatrix4fv(pm.u.uM, false, modelMat(ypr(q.yaw, q.pitch, q.roll), [q.x, q.y, q.z]));
+      gl.uniform3fv(pm.u.uGlow, ramp([hex3('#e04818'), hex3('#ff9020'), hex3('#fff4c0')], .35 + (q.ab || 0) * .64)); gl.drawArrays(gl.TRIANGLES, 0, jetMesh.n); }
   }
   gl.bindVertexArray(misMesh.vao); gl.uniform3fv(pm.u.uGlow, hex3('#fff4c0'));
   for (const m of MIS) { const F = norm(m.v), R = norm(cross(F, [0, 1, 0])), U = cross(R, F); gl.uniformMatrix4fv(pm.u.uM, false, modelMat({ R, U, F }, m.p)); gl.drawArrays(gl.TRIANGLES, 0, misMesh.n); }
@@ -1654,7 +1804,7 @@ function render() {
   const pp = progPost; gl.useProgram(pp.p); gl.bindVertexArray(emptyVAO);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texCol); gl.uniform1i(pp.u.uCol, 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texAux); gl.uniform1i(pp.u.uAux, 1);
-  gl.uniform3fv(pp.u.uPal, PALD.f); gl.uniform1i(pp.u.uPalN, Q.has('raw') ? 0 : PALD.n); gl.uniform1f(pp.u.uSpread, .072); gl.uniform2i(pp.u.uSize, W, H);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, PALD.t); gl.uniform1i(pp.u.uPalT, 2); gl.uniform1i(pp.u.uPalN, Q.has('raw') ? 0 : PALD.n); gl.uniform1f(pp.u.uSpread, .072); gl.uniform2i(pp.u.uSize, W, H);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.bindVertexArray(null);
 }
@@ -1761,6 +1911,19 @@ function drawUI(dt) {
     hud.text(t, 7, H - 9, CRD); hud.text(t, 6, H - 10, CR);
     if (J.pull && (T * 3 % 1) < .6) { hud.text('PULL UP', W / 2 + 1, H - 21, CRD, 1); hud.text('PULL UP', W / 2, H - 22, col('#ff8a6a'), 1); }
   }
+  for (const [, pl] of Net.players) { const q = pl.d; if (!q || !VP) continue;
+    const pr = project([q.x, q.y + 8, q.z], 1);
+    if (!pr || pr[0] < 6 || pr[0] > W - 6 || pr[1] < 34 || pr[1] > H - 14) {
+      const dv = [q.x - CAM.p[0], q.y - CAM.p[1], q.z - CAM.p[2]], b = CAM.b, a = Math.atan2(-dot(dv, b.U), dot(dv, b.R));
+      const ex = W / 2 + Math.cos(a) * (W / 2 - 18), ey = H / 2 + Math.sin(a) * (H / 2 - 22), c = col(SLOT_COLORS[pl.slot] || '#ffffff');
+      hud.disc(Math.round(ex), Math.round(ey), 2, CRD); hud.disc(Math.round(ex), Math.round(ey), 1, c);
+      hud.text(pl.name, ex + 1, ey + 5, CRD, 1); hud.text(pl.name, ex, ey + 4, c, 1);
+      continue;
+    }
+    const km = Math.hypot(q.x - CAM.p[0], q.y - CAM.p[1], q.z - CAM.p[2]) / 1000, c = col(SLOT_COLORS[pl.slot] || '#ffffff');
+    hud.text(pl.name, pr[0] + 1, pr[1] - 9, CRD, 1); hud.text(pl.name, pr[0], pr[1] - 10, c, 1);
+    if (km > .4) { const t = km.toFixed(1) + 'KM'; hud.text(t, pr[0] + 1, pr[1] - 2, CRD, 1); hud.text(t, pr[0], pr[1] - 3, c, 1); }
+    hud.p(pr[0], pr[1] + 4, c); }
   drawCursor(hud);
   uctx.putImageData(hud.img, 0, 0);
   if (ca > 0) {
@@ -1825,7 +1988,8 @@ const Sfx = {
    Input
    ========================================================================= */
 const titleEl = document.getElementById('title'), stripEl = document.getElementById('strip'), promptEl = document.getElementById('prompt');
-function takeControl() { if (!ready || input.moved) return; input.moved = true; titleEl.classList.add('gone'); }
+let gameOn = false;
+function takeControl() { if (!ready || !gameOn || input.moved) return; input.moved = true; titleEl.classList.add('gone'); }
 function toInternal(cx, cy) { input.mx = cx / innerWidth * W; input.my = cy / innerHeight * H; }
 let lastMove = null;
 glc.addEventListener('mousemove', e => {
@@ -1843,6 +2007,7 @@ glc.addEventListener('contextmenu', e => e.preventDefault());
 glc.addEventListener('wheel', e => { e.preventDefault(); J.holdAlt = clamp(J.holdAlt - Math.sign(e.deltaY) * 120, 60, 5200); }, { passive: false });
 addEventListener('blur', () => { input.lmb = false; input.keys.clear(); touchBurn = false; });
 addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && ready) cycleView(); return; }
   if (e.code === 'KeyF' && !e.repeat) { takeControl(); fire(); }
   if (e.code === 'KeyR' && !e.repeat) { takeControl(); barrelRoll(); }
@@ -1896,6 +2061,203 @@ const sndBtn = document.getElementById('snd');
 function toggleSound() { const on = Sfx.toggle(); sndBtn.classList.toggle('on', on); sndBtn.textContent = on ? 'SOUND ON' : 'SOUND OFF'; }
 sndBtn.addEventListener('click', e => { e.stopPropagation(); toggleSound(); sndBtn.blur(); });
 const pips = [...document.querySelectorAll('#msl i')];
+
+/* =========================================================================
+   Home screen + online rooms (2-4 players, peer-to-peer via PeerJS)
+   ========================================================================= */
+const SLOT_COLORS = ['#ffd890', '#6ce07c', '#7ac8ff', '#ff8a6a'];
+const $ = id => document.getElementById(id);
+const Menu = {
+  show(panel) { titleEl.classList.toggle('compact', panel !== 'mMain'); $('menu').hidden = false; for (const id of ['mMain', 'mMulti', 'mLobby']) $(id).hidden = id !== panel; },
+  msg(t) { $('mMsg').textContent = t || ''; }, lmsg(t) { $('lMsg').textContent = t || ''; }
+};
+function beginGame() {
+  gameOn = true; titleEl.classList.add('gone'); $('menu').hidden = true;
+  input.moved = false; promptEl.textContent = '';
+  updateNetLabel();
+}
+function spawnNear(sp, slot) {
+  const fx = Math.sin(sp.yaw), fz = -Math.cos(sp.yaw), rx = Math.cos(sp.yaw), rz = Math.sin(sp.yaw);
+  const side = [0, 45, -45, 0][slot], back = [0, 45, 45, 90][slot];
+  J.x = sp.x + rx * side - fx * back; J.z = sp.z + rz * side - fz * back; J.y = J.holdAlt = sp.y + slot * 15;
+  J.yaw = sp.yaw; J.pitch = 0; J.bank = 0; chase.yaw = sp.yaw; J.r = [J.x, J.y, J.z]; J.b = ypr(J.yaw, 0, 0);
+  wrapWorld(); propState.force = true;
+}
+function updateNetLabel() { const n = (Net.mode === 'host' ? Net.conns.size : Net.players.size) + 1; $('net').textContent = Net.mode === 'solo' ? '' : `ROOM ${Net.code} · ${n}P`; }
+let peerLib = null;
+function loadPeer() {
+  if (window.Peer) return Promise.resolve();
+  if (!peerLib) peerLib = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'; s.onload = () => window.Peer ? res() : rej(new Error('no Peer')); s.onerror = () => { peerLib = null; rej(new Error('load failed')); }; document.head.appendChild(s); });
+  return peerLib;
+}
+const cleanName = s => (String(s || '').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').trim().slice(0, 10)) || 'PILOT';
+const Net = {
+  mode: 'solo', peer: null, conn: null, conns: new Map(), players: new Map(), myId: null, name: 'PILOT', code: '', slot: 0, started: false, acc: 0, leaving: false, joinTimer: 0,
+  reset() {
+    this.leaving = true;
+    try { this.conn && this.conn.close(); } catch (_) {} try { this.peer && this.peer.destroy(); } catch (_) {}
+    clearTimeout(this.joinTimer);
+    this.peer = this.conn = null; this.conns.clear(); this.players.clear(); this.mode = 'solo'; this.started = false; this.slot = 0; this.code = '';
+    setTimeout(() => { this.leaving = false; }, 50); updateNetLabel();
+  },
+  roster() { const r = [{ id: this.mode === 'host' ? this.myId : 'host', name: this.mode === 'host' ? this.name : '', slot: 0, host: true }]; for (const [id, c] of this.conns) r.push({ id, name: c.name, slot: c.slot }); return r; },
+  showRoster(list) {
+    $('lList').innerHTML = ''; for (const p of list.sort((a, b) => a.slot - b.slot)) { const e = document.createElement('div'); e.innerHTML = `<i style="background:${SLOT_COLORS[p.slot]}"></i>`; e.appendChild(document.createTextNode(p.name + (p.host ? '  (HOST)' : '') + (p.slot === this.slot ? '  ← YOU' : ''))); $('lList').appendChild(e); }
+    $('bStart').hidden = !(this.mode === 'host' && !this.started);
+    if (this.mode === 'host') this.lmsgFor(list.length);
+  },
+  lmsgFor(n) { Menu.lmsg(n < 2 ? 'Waiting for friends to join… (2–4 players)' : `${n} of 4 pilots ready`); },
+  broadcast(m, except) { for (const [id, c] of this.conns) if (id !== except && c.c.open) try { c.c.send(m); } catch (_) {} },
+  // ---------- host ----------
+  async host() {
+    Menu.msg('Opening a room…');
+    try { await loadPeer(); } catch (_) { Menu.msg('Multiplayer could not load here. Open the game from its GitHub Pages link and try again.'); return; }
+    this.reset(); this.leaving = false; this.mode = 'host'; this.slot = 0; this.name = cleanName($('mName').value); saveName(this.name);
+    const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; this.code = Array.from({ length: 5 }, () => A[Math.floor(Math.random() * A.length)]).join('');
+    const peer = this.peer = new Peer('patrol-room-' + this.code);
+    peer.on('open', id => { this.myId = id; Menu.msg(''); $('lCode').textContent = this.code; $('lHint').hidden = false; Menu.show('mLobby'); this.showRoster(this.roster()); updateNetLabel(); });
+    peer.on('connection', c => {
+      c.on('data', m => this.hostData(c, m));
+      c.on('close', () => this.hostDrop(c.peer));
+      c.on('error', () => this.hostDrop(c.peer));
+    });
+    peer.on('disconnected', () => { if (!this.leaving && this.peer === peer) try { peer.reconnect(); } catch (_) {} });
+    peer.on('error', e => {
+      if (e.type === 'unavailable-id') { this.host(); return; }
+      if (e.type === 'peer-unavailable') return;
+      Menu.msg('Room error: ' + e.type); Menu.lmsg('Room error: ' + e.type);
+    });
+  },
+  hostData(c, m) {
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'hello') {
+      if (this.conns.size >= 3) { try { c.send({ t: 'full' }); } catch (_) {} setTimeout(() => c.close(), 400); return; }
+      const used = new Set([...this.conns.values()].map(v => v.slot)); let slot = 1; while (used.has(slot)) slot++;
+      this.conns.set(c.peer, { c, name: cleanName(m.name), slot });
+      c.send({ t: 'welcome', id: c.peer, slot, code: this.code, started: this.started, sp: this.started ? this.spawnInfo() : null });
+      const r = this.roster(); this.broadcast({ t: 'roster', r }); this.showRoster(r);
+      if (this.started) banner(cleanName(m.name) + ' joined');
+      updateNetLabel();
+    } else if (m.t === 'u') {
+      const c2 = this.conns.get(c.peer); if (!c2 || !m.s) return;
+      setRemote(c.peer, c2.name, c2.slot, m.s);
+    } else if (m.t === 'f') { applyFire(m); this.broadcast(m, c.peer); }
+  },
+  hostDrop(id) {
+    const c = this.conns.get(id); if (!c) return;
+    this.conns.delete(id); this.players.delete(id);
+    this.broadcast({ t: 'left', id }); const r = this.roster(); this.broadcast({ t: 'roster', r }); this.showRoster(r);
+    if (this.started) banner(c.name + ' left');
+    updateNetLabel();
+  },
+  spawnInfo() { return { x: J.x, y: J.y, z: J.z, yaw: J.yaw }; },
+  start() {
+    if (this.mode !== 'host') return;
+    this.started = true; const sp = this.spawnInfo();
+    this.broadcast({ t: 'start', sp }); $('bStart').hidden = true; beginGame();
+  },
+  // ---------- client ----------
+  async join(code) {
+    code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length !== 5) { Menu.msg('Type the 5-letter room code'); return; }
+    Menu.msg('Connecting…');
+    try { await loadPeer(); } catch (_) { Menu.msg('Multiplayer could not load here. Open the game from its GitHub Pages link and try again.'); return; }
+    this.reset(); this.leaving = false; this.mode = 'client'; this.code = code; this.name = cleanName($('mName').value); saveName(this.name);
+    const peer = this.peer = new Peer();
+    this.joinTimer = setTimeout(() => { if (this.mode === 'client' && !this.myId) { Menu.msg("Couldn't reach that room. Check the code and try again."); this.reset(); } }, 15000);
+    peer.on('open', () => {
+      const conn = this.conn = peer.connect('patrol-room-' + code, { reliable: true });
+      conn.on('open', () => conn.send({ t: 'hello', name: this.name }));
+      conn.on('data', m => this.clientData(m));
+      conn.on('close', () => this.clientLost());
+      conn.on('error', () => this.clientLost());
+    });
+    peer.on('error', e => {
+      if (e.type === 'peer-unavailable') { Menu.msg('No room with that code.'); this.reset(); return; }
+      Menu.msg('Connection error: ' + e.type); if (!this.started) this.reset();
+    });
+  },
+  clientData(m) {
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'welcome') {
+      clearTimeout(this.joinTimer); this.myId = m.id; this.slot = m.slot; Menu.msg('');
+      $('lCode').textContent = this.code; $('lHint').hidden = true; Menu.show('mLobby'); Menu.lmsg('Waiting for the host to start…'); $('bStart').hidden = true;
+      if (m.started && m.sp) { this.started = true; spawnNear(m.sp, this.slot); beginGame(); }
+      updateNetLabel();
+    } else if (m.t === 'full') { Menu.msg('That room is full (4 players max).'); this.reset(); }
+    else if (m.t === 'roster') { for (const p of m.r) if (p.host && !p.name) p.name = 'HOST'; this.showRoster(m.r); if (!this.started) Menu.lmsg('Waiting for the host to start…'); }
+    else if (m.t === 'start') { this.started = true; spawnNear(m.sp, this.slot); beginGame(); }
+    else if (m.t === 's') { this.lastS = performance.now(); for (const e of m.l) if (e.id !== this.myId) setRemote(e.id, e.n, e.sl, e); updateNetLabel(); }
+    else if (m.t === 'f') applyFire(m);
+    else if (m.t === 'left') { this.players.delete(m.id); updateNetLabel(); }
+  },
+  clientLost() {
+    if (this.leaving || this.mode !== 'client') return;
+    const wasOn = this.started; this.reset();
+    if (wasOn) banner('Host left the room'); else { Menu.show('mMulti'); Menu.msg('Lost connection to the room.'); }
+  },
+  // ---------- per-frame ----------
+  myState() { return { x: J.r[0], y: J.r[1], z: J.r[2], yaw: J.yaw, pitch: J.pitch, roll: J.rollVis, ab: +J.ab.toFixed(2), vx: J.vel[0], vy: J.vel[1], vz: J.vel[2] }; },
+  tick(dt) {
+    if (this.mode === 'solo' || !this.started) return;
+    this.acc += dt; if (this.acc < 1 / 15) return; this.acc = 0;
+    if (this.mode === 'client' && this.conn && this.conn.open) { try { this.conn.send({ t: 'u', s: this.myState() }); } catch (_) {} }
+    const now = performance.now();
+    if (this.mode === 'client' && this.lastS && now - this.lastS > 12000) { this.clientLost(); return; }
+    if (this.mode === 'host') {
+      for (const [id] of this.conns) { const p = this.players.get(id); if (p && now - p.t > 12000) this.hostDrop(id); }
+      const l = [{ id: this.myId, n: this.name, sl: 0, ...this.myState() }];
+      for (const [id, c] of this.conns) { const p = this.players.get(id); if (p) l.push({ id, n: c.name, sl: c.slot, ...p.tgt }); }
+      this.broadcast({ t: 's', l });
+    }
+  },
+  sendFire(p, v, tgt) {
+    if (this.mode === 'solo' || !this.started) return;
+    const m = { t: 'f', p, v, tgt };
+    if (this.mode === 'host') this.broadcast(m); else if (this.conn && this.conn.open) try { this.conn.send(m); } catch (_) {}
+  }
+};
+addEventListener('pagehide', () => { if (Net.mode !== 'solo') Net.reset(); });
+function saveName(n) { try { localStorage.setItem('patrolName', n); } catch (_) {} }
+try { const n = localStorage.getItem('patrolName'); if (n) $('mName').value = n; } catch (_) {}
+function banner(text) { countryEl.innerHTML = text; countryEl.classList.remove('show'); void countryEl.offsetWidth; countryEl.classList.add('show'); }
+function setRemote(id, name, slot, s) {
+  let p = Net.players.get(id); if (!p) { p = { d: null }; Net.players.set(id, p); }
+  p.name = name; p.slot = slot; p.tgt = { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, roll: s.roll, ab: s.ab, vx: s.vx, vy: s.vy, vz: s.vz }; p.t = performance.now();
+}
+const near = (v, ref) => v - WORLD * Math.round((v - ref) / WORLD);
+function applyFire(m) {
+  if (!m.p || !m.v || !m.tgt) return;
+  const ox = near(m.p[0], J.x) - m.p[0], oz = near(m.p[2], J.z) - m.p[2];
+  const p = [m.p[0] + ox, m.p[1], m.p[2] + oz];
+  MIS.push({ p, v: m.v.slice(), age: 0, tgt: [m.tgt[0] + ox, m.tgt[1], m.tgt[2] + oz], lp: p.slice(), remote: true });
+}
+function updateRemotes(dt) {
+  const now = performance.now(), k = 1 - Math.exp(-dt * 9);
+  for (const [id, p] of Net.players) {
+    const s = p.tgt; if (!s) continue;
+    if (now - p.t > 6000) { Net.players.delete(id); continue; }
+    const a = Math.min((now - p.t) / 1000, .5);
+    const tx = near(s.x + s.vx * a, J.x), ty = s.y + s.vy * a, tz = near(s.z + s.vz * a, J.z);
+    if (!p.d || Math.hypot(tx - p.d.x, tz - p.d.z) > 400) p.d = { x: tx, y: ty, z: tz, yaw: s.yaw, pitch: s.pitch, roll: s.roll };
+    else { p.d.x = near(p.d.x, J.x); p.d.z = near(p.d.z, J.z); p.d.x += (tx - p.d.x) * k; p.d.y += (ty - p.d.y) * k; p.d.z += (tz - p.d.z) * k;
+      p.d.yaw += wrapPI(s.yaw - p.d.yaw) * k; p.d.pitch += (s.pitch - p.d.pitch) * k; p.d.roll += wrapPI(s.roll - p.d.roll) * k; }
+    p.d.ab = s.ab;
+  }
+}
+$('menu').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; e.stopPropagation(); b.blur();
+  const a = b.dataset.a;
+  if (a === 'solo') { Net.reset(); beginGame(); }
+  else if (a === 'multi') { Menu.show('mMulti'); Menu.msg(''); }
+  else if (a === 'back') Menu.show('mMain');
+  else if (a === 'host') Net.host();
+  else if (a === 'join') Net.join($('mCode').value);
+  else if (a === 'start') Net.start();
+  else if (a === 'leave') { Net.reset(); Menu.show('mMulti'); Menu.msg(''); }
+});
+$('mCode').addEventListener('keydown', e => { if (e.key === 'Enter') Net.join($('mCode').value); });
+for (const id of ['menu']) for (const ev of ['mousedown', 'touchstart', 'pointerdown']) $(id).addEventListener(ev, e => e.stopPropagation(), { passive: true });
 function updateMslUI() { RAILS.forEach((r, i) => pips[i].classList.toggle('off', !r.ready)); }
 
 /* =========================================================================
@@ -1905,7 +2267,7 @@ let last = performance.now(), ema = 1 / 60, slowFor = 0, fpsEMA = 60, simErrors 
 function step(dt) {
   T += dt;
   input.ab = (input.lmb && performance.now() - input.lmbT > 230) || touchBurn || input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
-  updateJet(dt); wrapWorld(); updateWeapons(dt); updateSpray(dt); updateVolcanoes(dt); updateCountry(dt); updateParticles(dt); updateTrails(); updateCamera(dt);
+  updateJet(dt); wrapWorld(); updateWeapons(dt); updateSpray(dt); updateVolcanoes(dt); updateCountry(dt); updateParticles(dt); updateTrails(); updateCamera(dt); updateProps(); updateRemotes(dt); Net.tick(dt);
 }
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1940,7 +2302,7 @@ generateWorld(p => { barEl.style.width = (p * 100).toFixed(1) + '%'; })
     for (let i = 0; i < 30; i++) step(1 / 60);
     ready = true; barEl.style.width = '100%';
     document.getElementById('bar').style.display = 'none';
-    promptEl.textContent = matchMedia('(pointer: coarse)').matches ? 'Touch to take the stick' : 'Move the mouse to take the stick'; promptEl.classList.add('blink');
+    promptEl.textContent = ''; Menu.show('mMain');
     stripEl.classList.add('on'); updateMslUI();
     last = performance.now();
   })
@@ -1953,7 +2315,7 @@ window.__patrol = {
   setView(v) { while (view !== v) cycleView(); blend.t = 1; },
   fire, barrelRoll, explode, takeControl,
   place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
-  hAt: (x, z) => hAt(x, z), J, input, COUNTRIES, VOLCS, surfaceAt,
+  hAt: (x, z) => hAt(x, z), J, input, Net, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
   dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
 };
 })();
