@@ -10,6 +10,10 @@ html,body{height:100%;background:var(--bg);overflow:hidden;color:var(--ink);font
 canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 #gl{cursor:none}
 #ui{pointer-events:none}
+#country{position:fixed;left:0;right:0;top:22%;text-align:center;font-family:Silkscreen,monospace;font-size:min(9vw,44px);color:#fbe6b8;letter-spacing:.06em;text-shadow:0 3px 0 #7a4468,0 5px 0 rgba(22,14,32,.5);pointer-events:none;opacity:0;z-index:2}
+#country small{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.3em;text-transform:uppercase;text-shadow:0 1px 0 #2a1a30;margin:6px 0}
+#country.show{animation:ctry 4.5s ease forwards}
+@keyframes ctry{0%{opacity:0;transform:translateY(8px)}12%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0}}
 #strip{position:fixed;left:0;right:0;top:0;height:28px;display:flex;align-items:center;gap:16px;padding:0 14px;background:rgba(18,13,27,.66);border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.03em;color:var(--dim);opacity:0;transition:opacity .9s;z-index:3;white-space:nowrap}
 #strip.on{opacity:1}
 #hints{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -77,6 +81,7 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
   <button data-k="roll">ROLL</button><button data-k="burn">BURN</button><button data-k="fire">FIRE</button><button data-k="view">VIEW</button><button data-k="tilt" id="tiltBtn">TILT</button>
 </div>
 <div id="err"></div>
+<div id="country"></div>
 <script>
 (() => {
 'use strict';
@@ -85,7 +90,7 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
    Constants
    ========================================================================= */
 const Q = new URLSearchParams(location.search);
-const N = 1024, CELL = 10, WORLD = N * CELL;          // terrain tile: 10.24 km
+const N = 1024, CELL = 14, WORLD = N * CELL;          // terrain tile: 14.3 km
 const CN = 512, CLOUD_W = 9000, CB = 1150, CT = 300;  // cloud tile + layer
 const DEG = Math.PI / 180;
 const NEAR = 0.5, FAR = 60000;
@@ -126,24 +131,47 @@ function gn(x, y, P, s) {
 function fbm(u, v, P, oct, s) { let sum = 0, amp = 1, nrm = 0; for (let o = 0; o < oct; o++) { sum += gn(u*P, v*P, P, s + o*17) * amp; nrm += amp; amp *= 0.5; P *= 2; } return sum / nrm; }
 function ridged(u, v, P, oct, s) { let sum = 0, amp = 1, nrm = 0, w = 1; for (let o = 0; o < oct; o++) { let n = 1 - Math.abs(gn(u*P, v*P, P, s + o*31)); n *= n; n *= w; w = Math.min(1, Math.max(0, n * 1.7)); sum += n * amp; nrm += amp; amp *= 0.5; P *= 2; } return sum / nrm; }
 function sstep(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
-function heightRows(N, y0, y1) {
-  const out = new Float32Array((y1 - y0) * N * 4);
+function region(u, v, R) {
+  const ru = u + fbm(u, v, 4, 3, 301) * 0.035, rv = v + fbm(u, v, 4, 3, 302) * 0.035;
+  let d1 = 9, d2 = 9, i1 = 0, i2 = 0;
+  for (let i = 0; i < R.length; i += 3) {
+    let dx = ru - R[i], dy = rv - R[i+1]; dx -= Math.round(dx); dy -= Math.round(dy);
+    const dd = Math.sqrt(dx*dx + dy*dy);
+    if (dd < d1) { d2 = d1; i2 = i1; d1 = dd; i1 = i; } else if (dd < d2) { d2 = dd; i2 = i; }
+  }
+  return { i1: i1 / 3, i2: i2 / 3, t1: R[i1+2], t2: R[i2+2], gap: d2 - d1 };
+}
+function heightRows(N, y0, y1, R, WM) {
+  const out = new Float32Array((y1 - y0) * N * 4), bio = new Uint8Array((y1 - y0) * N * 5);
   for (let y = y0; y < y1; y++) {
     for (let x = 0; x < N; x++) {
       const u = (x + 0.5) / N, v = (y + 0.5) / N;
       const wx = fbm(u, v, 3, 3, 101) * 0.055, wy = fbm(u, v, 3, 3, 202) * 0.055;
       const uu = u + wx, vv = v + wy;
-      const cont = fbm(uu, vv, 2, 3, 1);
-      const hills = fbm(uu, vv, 6, 6, 2);
-      const mm = sstep(0.02, 0.42, fbm(u, v, 2, 2, 3) + 0.08);
-      const rg = ridged(uu, vv, 5, 5, 4);
-      const h = cont * 210 + hills * 125 + mm * rg * rg * 1150 + mm * 110;
+      const cont = fbm(uu, vv, 3, 3, 1);
+      const hills = fbm(uu, vv, 8, 6, 2);
+      const mm = sstep(0.02, 0.42, fbm(u, v, 3, 2, 3) + 0.08);
+      const rg = ridged(uu, vv, 7, 5, 4);
+      let h = cont * 210 + hills * 125 + mm * rg * rg * 1150 + mm * 110;
+      const rgn = region(u, v, R), gm = rgn.gap * 0.5 * WM;
+      const w1 = 0.5 + 0.5 * sstep(0, 300, gm), w = [0, 0, 0, 0]; w[rgn.t1] += w1; w[rgn.t2] += 1 - w1;
+      h = h * (1 - 0.55 * w[3]) + 35 * w[3];
+      h += w[1] * 50;
+      for (let k = 0; k < R.length; k += 3) {
+        if (R[k+2] !== 2) continue;
+        let dx = u - R[k], dy = v - R[k+1]; dx -= Math.round(dx); dy -= Math.round(dy);
+        const dm = Math.sqrt(dx*dx + dy*dy) * WM;
+        if (dm < 2600) { const c = 1 - dm / 2600; h = h * (1 - c * 0.7) + 1250 * Math.pow(c, 1.7) + 80 * c; if (dm < 280) h -= (1 - (dm / 280) * (dm / 280)) * 230; }
+      }
       const i = ((y - y0) * N + x) * 4;
-      out[i] = h; out[i+1] = fbm(u, v, 14, 4, 21); out[i+2] = fbm(u, v, 20, 3, 22) * 0.5 + 0.5; out[i+3] = 1;
+      out[i] = h; out[i+1] = fbm(u, v, 20, 4, 21); out[i+2] = fbm(u, v, 28, 3, 22) * 0.5 + 0.5; out[i+3] = 1;
+      const b = ((y - y0) * N + x) * 5;
+      bio[b] = Math.round(w[1] * 255); bio[b+1] = Math.round(w[2] * 255); bio[b+2] = Math.round(w[3] * 255);
+      bio[b+3] = Math.round(Math.max(0, 1 - gm / 120) * 255); bio[b+4] = rgn.i1;
     }
     if ((y & 7) === 7) postMessage({ type: 'p', n: 8 });
   }
-  return out;
+  return { out, bio };
 }
 function bumps(u, v, P, s) {
   const x = u * P, y = v * P, ix = Math.floor(x), iy = Math.floor(y); let m = 0;
@@ -192,13 +220,27 @@ function shadowRows(N, cell, y0, y1, sx, sz, tanE, maxH) {
 }
 onmessage = e => {
   const m = e.data;
-  if (m.kind === 'height') { const d = heightRows(m.N, m.y0, m.y1); postMessage({ type: 'done', y0: m.y0, data: d }, [d.buffer]); }
+  if (m.kind === 'height') { const r = heightRows(m.N, m.y0, m.y1, m.R, m.WM); postMessage({ type: 'done', y0: m.y0, data: r.out, bio: r.bio }, [r.out.buffer, r.bio.buffer]); }
   else if (m.kind === 'cloud') { const d = cloudMap(m.CN); postMessage({ type: 'p', n: 32 }); postMessage({ type: 'done', cloud: true, data: d }, [d.buffer]); }
   else if (m.kind === 'setH') { H = m.H; }
   else if (m.kind === 'shadow') { const d = shadowRows(m.N, m.cell, m.y0, m.y1, m.sx, m.sz, m.tanE, m.maxH); postMessage({ type: 'done', y0: m.y0, data: d }, [d.buffer]); }
 };
 `;
 
+/* Countries: each region of the map has its own landscape */
+const BIOME = { AUTUMN: 0, ICE: 1, VOLCANO: 2, FARM: 3 };
+const BIOME_LABEL = ['Autumn woods', 'Ice fields', 'Volcanic land', 'Farmland'];
+const COUNTRIES = (() => {
+  const defs = [['Ambervale', 0], ['Frostmark', 1], ['Millbrook', 3], ['Ashkarra', 2], ['Rustwood', 0], ['Wheatmere', 3], ['Glacia', 1], ['Cindral', 2], ['Greenhollow', 3]];
+  const order = [0, 3, 1, 5, 6, 2, 7, 8, 4]; let s = 1234567;
+  const r = () => { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s / 4294967296; };
+  return order.map((k, i) => { const gx = i % 3, gy = (i / 3) | 0; return { name: defs[k][0], type: defs[k][1], u: (gx + .25 + r() * .5) / 3, v: (gy + .25 + r() * .5) / 3 }; });
+})();
+const REGION_FLAT = COUNTRIES.flatMap(c => [c.u, c.v, c.type]);
+let BIO = null, REG = null, SNOWH = 800;
+const VOLCS = [];
+function texIdx(x, z) { const M = N - 1; return ((Math.floor(z / CELL) & M) * N) + (Math.floor(x / CELL) & M); }
+function surfaceAt(x, z) { if (!BIO) return 'land'; const i = texIdx(x, z); if (HM[i] >= 0) return 'land'; if (BIO[i * 4 + 1] > 128) return 'lava'; if (BIO[i * 4] > 128) return 'ice'; return 'water'; }
 let HM = null;       // CPU height field (Float32, N*N)
 let MAXH = 1000;
 function hAt(x, z) {
@@ -241,7 +283,7 @@ function localEngine(onProgress) {
     run: async (jobs, total, base, span) => {
       const out = []; let units = 0;
       for (const j of jobs) {
-        if (j.kind === 'height') { out.push({ y0: j.y0, data: L.heightRows(j.N, j.y0, j.y1) }); units += j.y1 - j.y0; }
+        if (j.kind === 'height') { const r = L.heightRows(j.N, j.y0, j.y1, j.R, j.WM); out.push({ y0: j.y0, data: r.out, bio: r.bio }); units += j.y1 - j.y0; }
         else if (j.kind === 'cloud') { out.push({ cloud: true, data: L.cloudMap(j.CN) }); units += 32; }
         else if (j.kind === 'shadow') { out.push({ y0: j.y0, data: L.shadowRows(j.N, j.cell, j.y0, j.y1, j.sx, j.sz, j.tanE, j.maxH) }); units += j.y1 - j.y0; }
         onProgress(base + span * Math.min(1, units / total)); await tick();
@@ -266,11 +308,18 @@ async function buildWorld(eng, onProgress) {
   const run = eng.run;
   // phase 1: height + materials, clouds
   const jobs = []; const BL = 32;
-  for (let y = 0; y < N; y += BL) jobs.push({ kind: 'height', N, y0: y, y1: y + BL });
+  for (let y = 0; y < N; y += BL) jobs.push({ kind: 'height', N, y0: y, y1: y + BL, R: REGION_FLAT, WM: WORLD });
   jobs.push({ kind: 'cloud', CN });
   const r1 = await run(jobs, N + 32, 0, 0.62);
   const tex = new Float32Array(N * N * 4); let cloud = null;
-  for (const r of r1) { if (r.cloud) cloud = r.data; else tex.set(r.data, r.y0 * N * 4); }
+  const bio = new Uint8Array(N * N * 4), reg = new Uint8Array(N * N);
+  for (const r of r1) {
+    if (r.cloud) { cloud = r.data; continue; }
+    tex.set(r.data, r.y0 * N * 4);
+    const b = r.bio, o = r.y0 * N;
+    for (let k = 0, n = b.length / 5; k < n; k++) { const q = (o + k) * 4; bio[q] = b[k*5]; bio[q+1] = b[k*5+1]; bio[q+2] = b[k*5+2]; bio[q+3] = b[k*5+3]; reg[o + k] = b[k*5+4]; }
+  }
+  BIO = bio; REG = reg;
   // shape: put ~33% under water, shallow lakes, subtle terraces
   const hs = new Float32Array(N * N); for (let i = 0; i < N * N; i++) hs[i] = tex[i * 4];
   const sorted = hs.slice().sort(); const off = sorted[Math.floor(N * N * 0.33)];
@@ -282,6 +331,10 @@ async function buildWorld(eng, onProgress) {
     hs[i] = h; tex[i * 4] = h; if (h > mx) mx = h;
   }
   MAXH = mx; HM = hs;
+  let mxNV = 0; for (let i = 0; i < N * N; i++) if (bio[i * 4 + 1] < 60 && hs[i] > mxNV) mxNV = hs[i];
+  SNOWH = (mxNV || mx) * .78;
+  VOLCS.length = 0;
+  for (const c of COUNTRIES) if (c.type === BIOME.VOLCANO) { const x = c.u * WORLD, z = c.v * WORLD; VOLCS.push({ x, z, floor: hAt(x, z), rim: hAt(x + 300, z), acc: 0 }); }
   onProgress(0.64);
   // phase 2: long baked sun shadows
   const sh = Math.hypot(SUN[0], SUN[2]);
@@ -291,7 +344,7 @@ async function buildWorld(eng, onProgress) {
   const r2 = await run(jobs2, N, 0.64, 0.33);
   for (const r of r2) { const d = r.data, base = r.y0 * N; for (let i = 0; i < d.length; i++) tex[(base + i) * 4 + 3] = d[i]; }
   eng.close();
-  return { tex, cloud };
+  return { tex, cloud, bio };
 }
 
 /* =========================================================================
@@ -341,7 +394,8 @@ precision highp float; precision highp sampler2D;
 in vec2 vNdc;
 layout(location=0) out vec4 oC;
 layout(location=1) out vec4 oA;
-uniform sampler2D uH, uCl;
+uniform sampler2D uH, uCl, uB;
+uniform vec4 uVolc[4];
 uniform vec3 uCamP, uCamR, uCamU, uCamF;
 uniform vec2 uTan, uNF, uCOff;
 uniform float uT, uWorld, uCell, uMaxH, uSnow, uCB, uCT, uCW, uJV, uDbg;
@@ -352,6 +406,8 @@ uniform vec4 uScor[8];
 ${COMMON}
 vec4 TX(vec2 xz){ return texture(uH, xz / uWorld); }
 float HT(vec2 xz){ return texture(uH, xz / uWorld).r; }
+vec4 BIO(vec2 xz){ return texture(uB, xz / uWorld); }
+vec2 tor(vec2 d){ return d - uWorld * floor(d / uWorld + .5); }
 float CLD(vec2 xz){ return texture(uCl, (xz + uCOff) / uCW).r; }
 
 vec3 skyCol(vec3 rd, bool disc){
@@ -456,6 +512,55 @@ vec3 effects(vec3 col, vec3 p, bool water, float bay){
   return col;
 }
 
+vec3 shadeLava(vec3 p, float t, float bay){
+  float n = vn(p.xz / 22. + uT * vec2(.35, .18)) + vn(p.xz / 8. - uT * vec2(.2, .3)) * .5;
+  float k = n / 1.5 + (bay - .5) * .22 + sin(uT * 2. + p.x * .05) * .04;
+  vec3 c = k > .8 ? #fff4c0 : k > .62 ? #ffd040 : k > .45 ? #ff9020 : k > .32 ? #e04818 : #902818;
+  float cr = vn(p.xz / 34. + uT * .03);
+  if (cr > .66 && abs(vn(p.xz / 6.) - .5) > .06) c = cr > .74 ? #2a2232 : #3c3444;
+  return effects(c, p, false, bay);
+}
+vec3 shadeIce(vec3 p, vec4 tx, float t, float bay){
+  float sh = tx.a * cloudShadow(p) * jetShadow(p);
+  float k = vn(p.xz / 60.) + (bay - .5) * .3;
+  vec3 c = k > .55 ? #e8f4f8 : #b8d8e8;
+  if (vn(p.xz / 110. + 9.) > .64) c = #fff8f0;
+  float a = vn(p.xz / 45.), b2 = vn(p.zx / 70. + 3.);
+  if (abs(a - .5) < .012 || abs(b2 - .5) < .01) c = #8ab0cc;
+  if (sh < .5 + (bay - .5) * .4) c = c == #fff8f0 ? #e0d8f0 : #8ab0cc;
+  float near = smoothstep(3000., 500., t);
+  if (near > 0. && h21(p.xz / 4. + floor(uT * 3.) * vec2(5., 9.)) > 1. - .003 * near * sh) c = #ffffff;
+  return effects(c, p, false, bay);
+}
+// little houses in villages: returns rgb + hit flag
+vec4 houses(vec3 p, float dens, float kind){
+  vec2 cid = floor(p.xz / 30.);
+  if (h21(cid + .5) > dens) return vec4(0.);
+  vec2 ctr = (cid + .5) * 30. + (vec2(h21(cid + 3.), h21(cid + 5.)) - .5) * 10.;
+  float hw = 4. + 3. * h21(cid + 7.), hd = 3. + 1.8 * h21(cid + 13.);
+  bool swp = h21(cid + 21.) > .5;
+  vec2 s = normalize(uSun.xz);
+  vec2 q = p.xz - ctr; if (swp) q = q.yx;
+  vec2 ss = swp ? s.yx : s;
+  if (abs(q.x) < hw && abs(q.y) < hd) {
+    bool lit = q.y * ss.y > 0.;
+    vec3 L, D;
+    float r = h21(floor(p.xz / 400.) + 2.);
+    if (kind > 1.5) { L = #fff8f0; D = #9890c0; }
+    else if (r < .55) { L = #d86048; D = #8c3434; }
+    else if (r < .8) { L = #8a7a98; D = #4c4068; }
+    else { L = #e0c860; D = #a87850; }
+    vec3 c = lit ? L : D;
+    if (abs(q.y) < .7) c = D;
+    if (abs(q.x) > hw - .9 || abs(q.y) > hd - .9) c = #2a2232;
+    return vec4(c, 1.);
+  }
+  for (int i = 1; i <= 2; i++) {
+    vec2 w = (p.xz + s * float(i) * 3.5) - ctr; if (swp) w = w.yx;
+    if (abs(w.x) < hw && abs(w.y) < hd) return vec4(0., 0., 0., .5);
+  }
+  return vec4(0.);
+}
 vec3 shadeWater(vec3 p, vec3 rd, vec4 tx, float t, float bay){
   float depth = -tx.r;
   float near = smoothstep(4000., 900., t);
@@ -478,7 +583,7 @@ vec3 shadeWater(vec3 p, vec3 rd, vec4 tx, float t, float bay){
   return effects(c, p, true, bay);
 }
 
-vec3 shadeLand(vec3 p, vec4 tx, float t, float bay){
+vec3 shadeLand(vec3 p, vec4 tx, vec4 bio, float t, float bay){
   float h = tx.r, e = uCell;
   float hx = HT(p.xz + vec2(e, 0)) - HT(p.xz - vec2(e, 0));
   float hz = HT(p.xz + vec2(0, e)) - HT(p.xz - vec2(0, e));
@@ -491,13 +596,59 @@ vec3 shadeLand(vec3 p, vec4 tx, float t, float bay){
   float nz = vn(p.xz / 40.);
   float lv = lit * 3.1 + .12 + (bay - .5) * .36;
   vec3 L, M, D;
-  if (h < 2.2 + nz * 3. && slope < .3) { L = #f0d8a8; M = #d8b888; D = #9a7c80; }
+  float jb = (bay - .5) * .5;
+  float wI = bio.r + jb * .5, wV = bio.g + jb * .5, wF = bio.b + jb * .5, wA = 1. - bio.r - bio.g - bio.b + jb * .5;
+  float biome = 0.; float bm = wA;
+  if (wI > bm) { bm = wI; biome = 1.; } if (wV > bm) { bm = wV; biome = 2.; } if (wF > bm) { bm = wF; biome = 3.; }
+  float dens = smoothstep(.52, .72, vn(p.xz / 650.)) * step(slope, .12) * step(4., h) * step(h, uSnow * .45);
+  vec4 hs = vec4(0.);
+  // lava in craters and rivers
+  if (biome == 2.) {
+    for (int i = 0; i < 4; i++) {
+      vec4 v = uVolc[i]; if (v.w < 0.) continue;
+      float dv = length(tor(p.xz - v.xy));
+      if (dv < 210. && h < v.z) return shadeLava(p, t, bay);
+      float riv = abs(vn(p.xz / 240. + float(i) * 13.) - .5);
+      if (dv < 2400. && dv > 250. && riv < .022 * (1. - dv / 2400.) + .004) return shadeLava(p, t, bay);
+      if (dv < 2400. && riv < .05 * (1. - dv / 2400.) + .01) { L = #e04818; M = #902818; D = #3c3444; vec3 col = lv > 1.35 ? L : (lv > .42 ? M : D); return effects(col, p, false, bay); }
+    }
+  }
+  if (biome == 2.) {
+    if (h < 2.2 + nz * 3. && slope < .3) { L = #4a4058; M = #3c3444; D = #2a2232; }
+    else if (nz + tx.b * .4 > .78) { L = #908088; M = #6a5e70; D = #3c3444; }
+    else { L = #6a5e70; M = #4a4058; D = #2a2232; lv += jit * .5; }
+  }
+  else if (biome == 1.) {
+    if (slope > .45) { L = #b8d8e8; M = #8a7a98; D = #4c4068; lv += jit * .5; }
+    else if (tx.g + (nz - .5) * .3 > .05 && h < uSnow * .6) {
+      vec2 kc = p.xz / 6., ki = floor(kc), kf = fract(kc) - .5 - (vec2(h21(ki + 3.), h21(ki + 11.)) - .5) * .4;
+      float cr = length(kf);
+      if (cr < .34) { L = #3c5844; M = #2a4038; D = #1a2430; lv += (.42 - cr) * .9 * near; if (near > .25 && length(kf + vec2(.1, -.1)) < .13) { L = #fff8f0; M = #e0d8f0; } }
+      else { L = #fff8f0; M = #e0d8f0; D = #9890c0; }
+    }
+    else { L = #fff8f0; M = #e0d8f0; D = #9890c0; }
+    hs = houses(p, dens * .3, 2.);
+  }
+  else if (biome == 3. && slope < .3 && h < uSnow * .6 && !(h < 2.2 + nz * 3.)) {
+    vec2 fc = p.xz / 150., fi = floor(fc + vn(p.xz / 300.) * .3), ff = fract(fc + vn(p.xz / 300.) * .3);
+    float fr = h21(fi + 31.), edge = min(min(ff.x, 1. - ff.x), min(ff.y, 1. - ff.y)) * 150.;
+    float rows = fract((h21(fi + 7.) > .5 ? p.x : p.z) / 5.);
+    if (fr < .3) { L = #a8c060; M = #7ca048; D = #4c6c38; }
+    else if (fr < .5) { L = #e0c860; M = #d0c080; D = #a87850; }
+    else if (fr < .65) { L = #a87850; M = #6c4c38; D = #4c4058; }
+    else { L = #b8cc70; M = #8cac58; D = #4c6440; }
+    if (near > .2 && rows < .25 && fr < .65) lv -= .5;
+    if (edge < 3.5 && h21(floor(p.xz / 5.)) < .7) { vec2 tc = fract(p.xz / 5.) - .5; L = #7ca048; M = #4c6c38; D = #2a4038; lv += (.4 - length(tc)) * near; }
+    else if (edge < 1.2) { L = #c0b070; M = #a8a060; D = #6c6464; }
+    hs = houses(p, dens * .55, 0.);
+  }
+  else if (h < 2.2 + nz * 3. && slope < .3) { L = #f0d8a8; M = #d8b888; D = #9a7c80; }
   else if (h > uSnow + nz * 70. && slope < .55) { L = #fff8f0; M = #e0d8f0; D = #9890c0; }
   else if (slope > .45 || (h > uSnow * .74 + nz * 60. && slope > .16)) { L = #b8a8b8; M = #8a7a98; D = #4c4068; lv += jit * .5; }
   else {
     float forest = tx.g + (nz - .5) * .3;
     float altF = smoothstep(uSnow * .86, uSnow * .62, h);
-    if (forest > .02 && altF > .35) {
+    if (forest > -.12 && altF > .35) {
       float conP = .1 + .5 * smoothstep(uSnow * .3, uSnow * .7, h) + (1. - altF) * .4;
       vec2 kc = p.xz / 7., ki = floor(kc), kf = fract(kc) - .5 - (vec2(h21(ki + 3.), h21(ki + 11.)) - .5) * .4;
       bool con = near > .25 ? (h21(ki + vec2(17., 3.)) < conP && length(kf) < .3 + .14 * h21(ki + 5.)) : h21(ki + vec2(17., 3.)) < conP * .55;
@@ -515,10 +666,16 @@ vec3 shadeLand(vec3 p, vec4 tx, float t, float bay){
       lv += jit * .35;
       if (nz + tx.b * .5 > .72) { L = #d0c080; M = #a8a060; D = #6c6464; }
       else { L = #e0d098; M = #c0b070; D = #7c7068; }
+      vec2 sc = p.xz / 11., si = floor(sc), sf = fract(sc) - .5 - (vec2(h21(si + 2.), h21(si + 4.)) - .5) * .5;
+      if (h21(si + 9.) < .16 && length(sf) < .32) { float cs = h21(si + 17.); if (cs < .4) { L = #f08838; M = #c85a28; D = #6c2c38; } else if (cs < .7) { L = #f0c040; M = #c89028; D = #6c4c38; } else { L = #3c5844; M = #2a4038; D = #1a2430; } lv += (.36 - length(sf)) * near; }
+      if (biome == 0.) hs = houses(p, dens * .35, 0.);
     }
   }
+  if (hs.a > .25 && hs.a < .75) lv = min(lv, .3);
   vec3 col = lv > 1.35 ? L : (lv > .42 ? M : D);
+  if (hs.a > .75) col = hs.rgb * (lit > .05 ? 1. : .8);
   if (near > .15 && slope > .04 && fract(h / 34.) < .07) col *= .9;
+  if (bio.a > 0.) { float bd = (1. - bio.a) * 120., bw = 2.5 + t * .0025; if (bd < bw && fract((p.x + p.z) / 26.) < .55) col = #f4f0e8; }
   return effects(col, p, false, bay);
 }
 
@@ -532,7 +689,8 @@ void main(){
   vec3 col; float th = -1.;
   if (tt >= 0.) {
     vec3 p = ro + rd * tt; vec4 tx = TX(p.xz); th = tt;
-    if (tx.r < 0.) { p.y = 0.; col = shadeWater(p, rd, tx, tt, bay); } else col = shadeLand(p, tx, tt, bay);
+    vec4 bio = BIO(p.xz);
+    if (tx.r < 0.) { p.y = 0.; col = bio.g > .5 ? shadeLava(p, tt, bay) : bio.r > .5 ? shadeIce(p, tx, tt, bay) : shadeWater(p, rd, tx, tt, bay); } else col = shadeLand(p, tx, bio, tt, bay);
     if (uDbg > 2.5 && jetShadow(p) < 1.) col = vec3(1, 0, 1);
   } else if (tc >= 0.) {
     vec3 p = ro + rd * tc; th = tc;
@@ -1218,7 +1376,7 @@ function updateWeapons(dt) {
       spawn(PK.FLAME, m.p[0] - dir[0] * 2, m.p[1] - dir[1] * 2, m.p[2] - dir[2] * 2, -dir[0] * 30, -dir[1] * 30, -dir[2] * 30, .09, 2.6, 1.2);
     }
     const g = hAt(m.p[0], m.p[2]);
-    if (m.p[1] <= Math.max(g, 0) + .5 || m.age > 14) { MIS.splice(i, 1); const water = g < 0; explode(m.p[0], m.age > 14 ? m.p[1] : Math.max(g, 0), m.p[2], water && m.p[1] < 5); updateMslUI(); }
+    if (m.p[1] <= Math.max(g, 0) + .5 || m.age > 14) { MIS.splice(i, 1); const water = g < 0; explode(m.p[0], m.age > 14 ? m.p[1] : Math.max(g, 0), m.p[2], water && m.p[1] < 5 && surfaceAt(m.p[0], m.p[2]) === 'water'); updateMslUI(); }
   }
   for (let i = BOOMS.length - 1; i >= 0; i--) { BOOMS[i].age += dt; if (BOOMS[i].age > 9) BOOMS.splice(i, 1); }
   for (let i = SCOR.length - 1; i >= 0; i--) { SCOR[i].age += dt; if (SCOR[i].age > 70) SCOR.splice(i, 1); }
@@ -1331,8 +1489,28 @@ function fillPlumes(out, n) {
   }
   return n;
 }
+function updateVolcanoes(dt) {
+  for (const v of VOLCS) {
+    let dx = v.x - J.x, dz = v.z - J.z; dx -= WORLD * Math.round(dx / WORLD); dz -= WORLD * Math.round(dz / WORLD);
+    if (dx * dx + dz * dz > 15000 * 15000) continue;
+    const x = J.x + dx, z = J.z + dz;
+    v.acc += dt * 7;
+    while (v.acc > 1) { v.acc--; spawn(Math.random() < .6 ? PK.DSMOKE : PK.SMOKE, x + rnd(-60, 60), v.rim + rnd(0, 40), z + rnd(-60, 60), rnd(-3, 3) + 6, rnd(10, 18), rnd(-3, 3) + 2.5, rnd(18, 30), rnd(40, 70), rnd(150, 260), .02, -.15); }
+    if (Math.random() < dt * 3) for (let i = 0; i < 6; i++) spawn(PK.EMBER, x + rnd(-40, 40), v.floor + 50, z + rnd(-40, 40), rnd(-30, 30), rnd(40, 90), rnd(-30, 30), rnd(3, 6), 2.4, 2.4, .2, 26);
+  }
+}
+let curCountry = -1, countryT = 0;
+const countryEl = document.getElementById('country');
+function updateCountry(dt) {
+  if (!REG || !input.moved) return; countryT -= dt; if (countryT > 0) return; countryT = .5;
+  const id = REG[texIdx(J.x, J.z)];
+  if (id === curCountry) return; const first = curCountry < 0; curCountry = id;
+  const c = COUNTRIES[id]; if (!c) return;
+  countryEl.innerHTML = (first ? '' : '<small>Entering</small>') + c.name + '<small>' + BIOME_LABEL[c.type] + '</small>';
+  countryEl.classList.remove('show'); void countryEl.offsetWidth; countryEl.classList.add('show');
+}
 function updateSpray(dt) {
-  const g = hAt(J.x, J.z); if (g >= 0 || J.ralt > 34) return;
+  const g = hAt(J.x, J.z); if (g >= 0 || J.ralt > 34 || surfaceAt(J.x, J.z) !== 'water') return;
   const k = 1 - J.ralt / 34, F = J.b.F, fh = norm([F[0], 0, F[2]]), rt = [-fh[2], 0, fh[0]];
   const n = Math.floor(k * 9 + Math.random());
   for (let i = 0; i < n; i++) { const back = rnd(4, 14), side = rnd(-3, 3) * (1 + k); spawn(PK.SPRAY, J.x - fh[0] * back + rt[0] * side, .4, J.z - fh[2] * back + rt[2] * side, -fh[0] * rnd(10, 30) + rt[0] * side * 2, rnd(6, 24) * k, -fh[2] * rnd(10, 30) + rt[2] * side * 2, rnd(.8, 1.6), rnd(1.2, 2), rnd(3, 5), .5, 26); }
@@ -1403,7 +1581,8 @@ function project(d, w = 0) { const m = VP, x = m[0] * d[0] + m[4] * d[1] + m[8] 
 /* =========================================================================
    Rendering
    ========================================================================= */
-let hTex = null, cTex = null, PALD = null;
+let hTex = null, cTex = null, bTex = null, PALD = null;
+const volcU = new Float32Array(16);
 function uploadWorld(tex, cloud) {
   hTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, hTex);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -1412,6 +1591,10 @@ function uploadWorld(tex, cloud) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
   cTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, cTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, CN, CN, 0, gl.RED, gl.UNSIGNED_BYTE, cloud);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  bTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, bTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, BIO);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
   PALD = buildPalette();
@@ -1428,9 +1611,11 @@ function render() {
   const pw = progWorld, u = pw.u; gl.useProgram(pw.p); gl.bindVertexArray(emptyVAO);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hTex); gl.uniform1i(u.uH, 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, cTex); gl.uniform1i(u.uCl, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bTex); gl.uniform1i(u.uB, 2);
+  volcU.fill(-1); VOLCS.slice(0, 4).forEach((v, i) => volcU.set([v.x, v.z, v.floor + 45, 1], i * 4)); gl.uniform4fv(u.uVolc, volcU);
   gl.uniform3fv(u.uCamP, c.p); gl.uniform3fv(u.uCamR, b.R); gl.uniform3fv(u.uCamU, b.U); gl.uniform3fv(u.uCamF, b.F);
   const ty = Math.tan(c.fov / 2); gl.uniform2f(u.uTan, ty * aspect, ty); gl.uniform2f(u.uNF, NEAR, FAR);
-  gl.uniform1f(u.uT, T % 3600); gl.uniform1f(u.uWorld, WORLD); gl.uniform1f(u.uCell, CELL); gl.uniform1f(u.uMaxH, MAXH); gl.uniform1f(u.uSnow, MAXH * .78);
+  gl.uniform1f(u.uT, T % 3600); gl.uniform1f(u.uWorld, WORLD); gl.uniform1f(u.uCell, CELL); gl.uniform1f(u.uMaxH, MAXH); gl.uniform1f(u.uSnow, SNOWH);
   gl.uniform1f(u.uCB, CB); gl.uniform1f(u.uCT, CT); gl.uniform1f(u.uCW, CLOUD_W); gl.uniform2f(u.uCOff, (T * 6) % CLOUD_W, (T * 2.5) % CLOUD_W);
   gl.uniform3fv(u.uSun, SUN); gl.uniform3fv(u.uShD, SHD);
   gl.uniform3fv(u.uJP, J.r); gl.uniform3fv(u.uJR, J.b.R); gl.uniform3fv(u.uJU, J.b.U); gl.uniform3fv(u.uJF, J.b.F); gl.uniform1f(u.uJV, 1); gl.uniform1f(u.uDbg, +(Q.get('dbg') || 0));
@@ -1720,7 +1905,7 @@ let last = performance.now(), ema = 1 / 60, slowFor = 0, fpsEMA = 60, simErrors 
 function step(dt) {
   T += dt;
   input.ab = (input.lmb && performance.now() - input.lmbT > 230) || touchBurn || input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
-  updateJet(dt); wrapWorld(); updateWeapons(dt); updateSpray(dt); updateParticles(dt); updateTrails(); updateCamera(dt);
+  updateJet(dt); wrapWorld(); updateWeapons(dt); updateSpray(dt); updateVolcanoes(dt); updateCountry(dt); updateParticles(dt); updateTrails(); updateCamera(dt);
 }
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1768,7 +1953,7 @@ window.__patrol = {
   setView(v) { while (view !== v) cycleView(); blend.t = 1; },
   fire, barrelRoll, explode, takeControl,
   place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
-  hAt: (x, z) => hAt(x, z), J, input,
+  hAt: (x, z) => hAt(x, z), J, input, COUNTRIES, VOLCS, surfaceAt,
   dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
 };
 })();
