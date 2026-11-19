@@ -1543,7 +1543,7 @@ function updateJet(dt) {
   if (J.ap) { tb = Math.sin(T * .3) * .62; tp = clamp((J.holdAlt - J.y) * .004, -.25, .25); }
   else if (view === 0) {
     if (keyCtl) { tb = kx * 1.05; J.holdAlt = clamp(J.holdAlt - ky * 320 * dt, 60, 5200); }
-    else if (TILT.on) tb = TILT.x * 1.05;
+    else if (TILT.on) { tb = TILT.x * 1.05; J.holdAlt = clamp(J.holdAlt - TILT.y * 320 * dt, 60, 5200); }
     else { const w = cursorWorld(); if (w) { const dx = w[0] - J.x, dz = w[2] - J.z; if (dx * dx + dz * dz > 30 * 30) tb = clamp(wrapPI(Math.atan2(dx, -dz) - J.yaw) * 1.5, -1.2, 1.2); } }
     tp = clamp((J.holdAlt - J.y) * .004, -.4, .4);
   } else {
@@ -1551,7 +1551,7 @@ function updateJet(dt) {
     if (input.touchSteer === false && input.touchUp) { nx = 0; ny = 0; }
     nx = dead(clamp(nx, -1, 1)); ny = dead(clamp(ny, -1, 1));
     if (keyCtl) { nx = kx; ny = ky; }
-    else if (TILT.on) { nx = TILT.x; if (steerId === null) ny = 0; }
+    else if (TILT.on) { nx = TILT.x; if (steerId === null) ny = TILT.y; }
     tb = nx * 1.25; tp = -ny * .95; J.holdAlt = J.y;
   }
   // terrain look-ahead: never crash
@@ -2023,24 +2023,29 @@ const touchEnd = e => { for (const t of e.changedTouches) if (t.identifier === s
 glc.addEventListener('touchend', touchEnd); glc.addEventListener('touchcancel', touchEnd);
 const touchEl = document.getElementById('touch');
 // tilt steering: lean the phone left/right like a steering wheel
-const TILT = { on: false, x: 0, n: null, raw: 0 };
+const TILT = { on: false, x: 0, y: 0, n: null, ny: null, raw: 0 };
 {
   const tb = document.getElementById('tiltBtn');
   const angle = () => (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0);
   const read = e => { if (e.beta == null || e.gamma == null) return null; const a = ((angle() % 360) + 360) % 360; return a === 90 ? e.beta : a === 270 ? -e.beta : a === 180 ? -e.gamma : e.gamma; };
+  const readFB = e => { const a = ((angle() % 360) + 360) % 360; return a === 90 ? -e.gamma : a === 270 ? e.gamma : a === 180 ? -e.beta : e.beta; };
   addEventListener('deviceorientation', e => {
     if (!TILT.on) return; const r = read(e); if (r == null) return;
     if (!TILT.got) { TILT.got = true; tb.textContent = 'TILT ON'; }
-    if (TILT.n === null) TILT.n = r;
+    const f = readFB(e);
+    if (TILT.n === null) { TILT.n = r; TILT.ny = f; }
     let d = r - TILT.n; if (d > 180) d -= 360; if (d < -180) d += 360;
     const v = clamp(d / 28, -1, 1), dz = Math.sign(v) * Math.max(0, Math.abs(v) - .06) / .94;
     TILT.x += (dz - TILT.x) * .35;
+    let g = f - TILT.ny; if (g > 90) g -= 180; if (g < -90) g += 180;
+    const w = clamp(-g / 24, -1, 1), wz = Math.sign(w) * Math.max(0, Math.abs(w) - .08) / .92;
+    TILT.y += (wz - TILT.y) * .35;
   });
   addEventListener('orientationchange', () => { TILT.n = null; });
   if (!('DeviceOrientationEvent' in window)) tb.style.display = 'none';
   tb.addEventListener('click', async e => {
     e.stopPropagation();
-    if (TILT.on) { TILT.on = false; TILT.x = 0; tb.classList.remove('lit'); tb.textContent = 'TILT'; return; }
+    if (TILT.on) { TILT.on = false; TILT.x = 0; TILT.y = 0; tb.classList.remove('lit'); tb.textContent = 'TILT'; return; }
     tb.textContent = 'ASK...';
     try { if (typeof DeviceOrientationEvent.requestPermission === 'function') { const p = await DeviceOrientationEvent.requestPermission(); if (p !== 'granted') { tb.textContent = 'DENIED'; return; } } } catch (_) { tb.textContent = 'BLOCKED'; return; }
     TILT.on = true; TILT.got = false; TILT.n = null; TILT.x = 0; tb.classList.add('lit'); tb.textContent = 'WAIT...'; takeControl();
@@ -2049,7 +2054,7 @@ const TILT = { on: false, x: 0, n: null, raw: 0 };
 }
 if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window && navigator.maxTouchPoints > 0) {
   touchEl.classList.add('on');
-  document.getElementById('hints').innerHTML = '<b>Drag</b> or <b>TILT</b> steer<span class="s">·</span><b>ROLL</b> <b>BURN</b> <b>FIRE</b> <b>VIEW</b> buttons';
+  document.getElementById('hints').innerHTML = '<b>Drag</b> or <b>TILT</b> steer (lean = turn, tip = climb/dive)<span class="s">·</span><b>ROLL</b> <b>BURN</b> <b>FIRE</b> <b>VIEW</b> buttons';
 }
 touchEl.querySelectorAll('button').forEach(bt => {
   const k = bt.dataset.k;
@@ -2315,7 +2320,7 @@ window.__patrol = {
   setView(v) { while (view !== v) cycleView(); blend.t = 1; },
   fire, barrelRoll, explode, takeControl,
   place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
-  hAt: (x, z) => hAt(x, z), J, input, Net, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
+  hAt: (x, z) => hAt(x, z), J, input, TILT, Net, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
   dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
 };
 })();
