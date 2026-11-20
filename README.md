@@ -22,7 +22,7 @@ The home screen has **SOLO** and **MULTIPLAYER**.
 Multiplayer is for 2 to 4 players online:
 1. One player taps **HOST A ROOM** and gets a 5-letter code.
 2. Friends tap **MULTIPLAYER**, type the code and tap **JOIN**.
-3. When everyone is in, the host taps **START**.
+3. The host picks the mode, **CO-OP vs BANDITS** (team up against AI jets) or **PVP** (fight each other), then taps **START** when everyone is in.
 
 You see each other's jets with name tags (markers at the screen edge point to friends who are out of view), and each other's missiles. It connects players directly using PeerJS, so it needs an internet connection; some strict networks may block it.
 
@@ -70,7 +70,7 @@ The home screen has **SOLO** and **MULTIPLAYER**.
 Multiplayer is for 2 to 4 players online:
 1. One player taps **HOST A ROOM** and gets a 5-letter code.
 2. Friends tap **MULTIPLAYER**, type the code and tap **JOIN**.
-3. When everyone is in, the host taps **START**.
+3. The host picks the mode, **CO-OP vs BANDITS** (team up against AI jets) or **PVP** (fight each other), then taps **START** when everyone is in.
 
 You see each other's jets with name tags (markers at the screen edge point to friends who are out of view), and each other's missiles. It connects players directly using PeerJS, so it needs an internet connection; some strict networks may block it.
 

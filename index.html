@@ -50,6 +50,7 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
 #lList{display:flex;flex-direction:column;gap:4px;min-width:200px;font-size:13px;letter-spacing:.1em}
 #lList div{display:flex;align-items:center;gap:8px;color:#fbe6b8}
 #lList i{width:10px;height:10px;display:block}
+#menu button.sm.on{background:#fbe6b8;color:#1b1322;border-color:#fbe6b8}
 #net{color:#6ce07c;font-weight:600;letter-spacing:.08em}
 #score{color:#fbe6b8;font-weight:600;letter-spacing:.08em}
 #warn{position:fixed;left:0;right:0;top:44px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;z-index:3;font-family:Silkscreen,monospace}
@@ -123,6 +124,8 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
       <div class="lbl" id="lHint">Send this code to your friends</div>
       <div id="lList"></div>
       <div class="msg" id="lMsg"></div>
+      <div class="lbl" id="lModeTxt"></div>
+      <div class="mrow" id="lMode"><button data-a="mode-coop" class="sm">CO-OP vs BANDITS</button><button data-a="mode-pvp" class="sm">PVP</button></div>
       <button data-a="start" id="bStart">START</button>
       <button data-a="leave" class="sm">LEAVE</button>
     </div>
@@ -1528,8 +1531,8 @@ function updateWeapons(dt) {
           else if (dist < 14) { MIS.splice(i, 1); airBurst(m.p[0], m.p[1], m.p[2], .7); damageMe(55, m.owner, 'missile'); Net.event({ t: 'mhit', mid: m.mid, x: m.p[0], y: m.p[1], z: m.p[2] }); updateMslUI(); continue; }
         } else if (tp.ai) {
           const a = tp.ai;
-          if (!m.aiChk && dist < 380) { m.aiChk = true; if (Math.random() < .35) { a.rollT = 0; m.lost = true; } }
-          if (!m.lost && dist < 14) { MIS.splice(i, 1); airBurst(m.p[0], m.p[1], m.p[2], .7); damageAI(a, 70, m.owner); continue; }
+          if (!m.aiChk && dist < 380 && !a.mirror) { m.aiChk = true; if (Math.random() < .35) { a.rollT = 0; m.lost = true; } }
+          if (!m.lost && dist < 14) { MIS.splice(i, 1); airBurst(m.p[0], m.p[1], m.p[2], .7); if (m.owner === meId() || Net.mode === 'solo') damageAI(a, 70, m.owner); continue; }
         }
       }
       if (m.lost) { const f = norm(m.v); m.tgt = [m.p[0] + f[0] * 2000, m.p[1] + f[1] * 2000, m.p[2] + f[2] * 2000]; }
@@ -2122,6 +2125,7 @@ const Menu = {
   msg(t) { $('mMsg').textContent = t || ''; }, lmsg(t) { $('lMsg').textContent = t || ''; }
 };
 function beginGame() {
+  if (coopClient()) setTimeout(() => banner('BANDITS INBOUND<small>team up · G / GUN to shoot · ROLL to dodge</small>'), 6000);
   gameOn = true; kills = 0; deaths = 0; J.hp = 100; J.dead = false; updateScore(); titleEl.classList.add('gone'); $('menu').hidden = true;
   input.moved = false; promptEl.textContent = '';
   updateNetLabel();
@@ -2133,7 +2137,7 @@ function spawnNear(sp, slot) {
   J.yaw = sp.yaw; J.pitch = 0; J.bank = 0; chase.yaw = sp.yaw; J.r = [J.x, J.y, J.z]; J.b = ypr(J.yaw, 0, 0);
   wrapWorld(); propState.force = true;
 }
-function updateNetLabel() { const n = (Net.mode === 'host' ? Net.conns.size : Net.players.size) + 1; $('net').textContent = Net.mode === 'solo' ? '' : `ROOM ${Net.code} · ${n}P`; }
+function updateNetLabel() { const n = (Net.mode === 'host' ? Net.conns.size : Net.players.size) + 1; $('net').textContent = Net.mode === 'solo' ? '' : `ROOM ${Net.code} · ${n}P · ${Net.gameMode === 'coop' ? 'CO-OP' : 'PVP'}`; }
 let peerLib = null;
 function loadPeer() {
   if (window.Peer) return Promise.resolve();
@@ -2142,15 +2146,22 @@ function loadPeer() {
 }
 const cleanName = s => (String(s || '').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').trim().slice(0, 10)) || 'PILOT';
 const Net = {
-  mode: 'solo', peer: null, conn: null, conns: new Map(), players: new Map(), myId: null, name: 'PILOT', code: '', slot: 0, started: false, acc: 0, leaving: false, joinTimer: 0,
+  mode: 'solo', gameMode: 'coop', peer: null, conn: null, conns: new Map(), players: new Map(), myId: null, name: 'PILOT', code: '', slot: 0, started: false, acc: 0, leaving: false, joinTimer: 0,
   reset() {
     this.leaving = true;
     try { this.conn && this.conn.close(); } catch (_) {} try { this.peer && this.peer.destroy(); } catch (_) {}
     clearTimeout(this.joinTimer);
-    this.peer = this.conn = null; this.conns.clear(); this.players.clear(); this.mode = 'solo'; this.started = false; this.slot = 0; this.code = '';
+    this.peer = this.conn = null; this.conns.clear(); this.gameMode = 'coop'; BANDITS.length = 0; this.players.clear(); this.mode = 'solo'; this.started = false; this.slot = 0; this.code = '';
     setTimeout(() => { this.leaving = false; }, 50); updateNetLabel();
   },
   roster() { const r = [{ id: this.mode === 'host' ? this.myId : 'host', name: this.mode === 'host' ? this.name : '', slot: 0, host: true }]; for (const [id, c] of this.conns) r.push({ id, name: c.name, slot: c.slot }); return r; },
+  setMode(gm) { if (this.mode !== 'host' || this.started) return; this.gameMode = gm; this.showMode(); const r = this.roster(); this.broadcast({ t: 'roster', r, gm }); },
+  showMode() {
+    $('lMode').hidden = this.mode !== 'host' || this.started;
+    for (const b of $('lMode').querySelectorAll('button')) b.classList.toggle('on', b.dataset.a === 'mode-' + this.gameMode);
+    $('lModeTxt').textContent = this.gameMode === 'coop' ? 'MODE: CO-OP — team up against bandits' : 'MODE: PVP — fight each other';
+    updateNetLabel();
+  },
   showRoster(list) {
     $('lList').innerHTML = ''; for (const p of list.sort((a, b) => a.slot - b.slot)) { const e = document.createElement('div'); e.innerHTML = `<i style="background:${SLOT_COLORS[p.slot]}"></i>`; e.appendChild(document.createTextNode(p.name + (p.host ? '  (HOST)' : '') + (p.slot === this.slot ? '  ← YOU' : ''))); $('lList').appendChild(e); }
     $('bStart').hidden = !(this.mode === 'host' && !this.started);
@@ -2165,7 +2176,7 @@ const Net = {
     this.reset(); this.leaving = false; this.mode = 'host'; this.slot = 0; this.name = cleanName($('mName').value); saveName(this.name);
     const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; this.code = Array.from({ length: 5 }, () => A[Math.floor(Math.random() * A.length)]).join('');
     const peer = this.peer = new Peer('patrol-room-' + this.code);
-    peer.on('open', id => { this.myId = id; Menu.msg(''); $('lCode').textContent = this.code; $('lHint').hidden = false; Menu.show('mLobby'); this.showRoster(this.roster()); updateNetLabel(); });
+    peer.on('open', id => { this.myId = id; Menu.msg(''); $('lCode').textContent = this.code; $('lHint').hidden = false; Menu.show('mLobby'); this.showRoster(this.roster()); this.showMode(); });
     peer.on('connection', c => {
       c.on('data', m => this.hostData(c, m));
       c.on('close', () => this.hostDrop(c.peer));
@@ -2184,8 +2195,8 @@ const Net = {
       if (this.conns.size >= 3) { try { c.send({ t: 'full' }); } catch (_) {} setTimeout(() => c.close(), 400); return; }
       const used = new Set([...this.conns.values()].map(v => v.slot)); let slot = 1; while (used.has(slot)) slot++;
       this.conns.set(c.peer, { c, name: cleanName(m.name), slot });
-      c.send({ t: 'welcome', id: c.peer, slot, code: this.code, started: this.started, sp: this.started ? this.spawnInfo() : null });
-      const r = this.roster(); this.broadcast({ t: 'roster', r }); this.showRoster(r);
+      c.send({ t: 'welcome', id: c.peer, slot, code: this.code, started: this.started, sp: this.started ? this.spawnInfo() : null, gm: this.gameMode });
+      const r = this.roster(); this.broadcast({ t: 'roster', r, gm: this.gameMode }); this.showRoster(r);
       if (this.started) banner(cleanName(m.name) + ' joined');
       updateNetLabel();
     } else if (m.t === 'u') {
@@ -2197,7 +2208,7 @@ const Net = {
   hostDrop(id) {
     const c = this.conns.get(id); if (!c) return;
     this.conns.delete(id); this.players.delete(id);
-    this.broadcast({ t: 'left', id }); const r = this.roster(); this.broadcast({ t: 'roster', r }); this.showRoster(r);
+    this.broadcast({ t: 'left', id }); const r = this.roster(); this.broadcast({ t: 'roster', r, gm: this.gameMode }); this.showRoster(r);
     if (this.started) banner(c.name + ' left');
     updateNetLabel();
   },
@@ -2205,7 +2216,7 @@ const Net = {
   start() {
     if (this.mode !== 'host') return;
     this.started = true; const sp = this.spawnInfo();
-    this.broadcast({ t: 'start', sp }); $('bStart').hidden = true; beginGame();
+    this.broadcast({ t: 'start', sp, gm: this.gameMode }); $('bStart').hidden = true; this.showMode(); beginGame();
   },
   // ---------- client ----------
   async join(code) {
@@ -2233,12 +2244,13 @@ const Net = {
     if (m.t === 'welcome') {
       clearTimeout(this.joinTimer); this.myId = m.id; this.slot = m.slot; Menu.msg('');
       $('lCode').textContent = this.code; $('lHint').hidden = true; Menu.show('mLobby'); Menu.lmsg('Waiting for the host to start…'); $('bStart').hidden = true;
+      if (m.gm) this.gameMode = m.gm; this.showMode();
       if (m.started && m.sp) { this.started = true; spawnNear(m.sp, this.slot); beginGame(); }
       updateNetLabel();
     } else if (m.t === 'full') { Menu.msg('That room is full (4 players max).'); this.reset(); }
-    else if (m.t === 'roster') { for (const p of m.r) if (p.host && !p.name) p.name = 'HOST'; this.showRoster(m.r); if (!this.started) Menu.lmsg('Waiting for the host to start…'); }
-    else if (m.t === 'start') { this.started = true; spawnNear(m.sp, this.slot); beginGame(); }
-    else if (m.t === 's') { this.lastS = performance.now(); for (const e of m.l) if (e.id !== this.myId) setRemote(e.id, e.n, e.sl, e); updateNetLabel(); }
+    else if (m.t === 'roster') { if (m.gm) { this.gameMode = m.gm; this.showMode(); } for (const p of m.r) if (p.host && !p.name) p.name = 'HOST'; this.showRoster(m.r); if (!this.started) Menu.lmsg('Waiting for the host to start…'); }
+    else if (m.t === 'start') { if (m.gm) this.gameMode = m.gm; this.started = true; this.showMode(); spawnNear(m.sp, this.slot); beginGame(); }
+    else if (m.t === 's') { this.lastS = performance.now(); for (const e of m.l) if (e.id !== this.myId) setRemote(e.id, e.n, e.sl, e); if (m.ai) syncBandits(m.ai); updateNetLabel(); }
     else if (m.t === 'f') applyFire(m);
     else if (NET_EV.has(m.t)) netEvent(m);
     else if (m.t === 'left') { this.players.delete(m.id); updateNetLabel(); }
@@ -2261,7 +2273,8 @@ const Net = {
       for (const [id] of this.conns) { const p = this.players.get(id); if (p && now - p.t > 12000) this.hostDrop(id); }
       const l = [{ id: this.myId, n: this.name, sl: 0, ...this.myState() }];
       for (const [id, c] of this.conns) { const p = this.players.get(id); if (p) l.push({ id, n: c.name, sl: c.slot, ...p.tgt }); }
-      this.broadcast({ t: 's', l });
+      const msg = { t: 's', l }; if (this.gameMode === 'coop') msg.ai = BANDITS.map(a => [a.id, Math.round(a.x * 10) / 10, Math.round(a.y * 10) / 10, Math.round(a.z * 10) / 10, +a.yaw.toFixed(3), +a.pitch.toFixed(3), +(a.rollVis || 0).toFixed(3), Math.round(a.hp), a.dead ? 1 : 0, Math.round(a.vel[0]), Math.round(a.vel[1]), Math.round(a.vel[2]), a.burst > 0 ? 1 : 0]);
+      this.broadcast(msg);
     }
   },
   sendFire(p, v, tgt, tid, mid) {
@@ -2310,6 +2323,7 @@ $('menu').addEventListener('click', e => {
   else if (a === 'host') Net.host();
   else if (a === 'join') Net.join($('mCode').value);
   else if (a === 'start') Net.start();
+  else if (a === 'mode-coop' || a === 'mode-pvp') Net.setMode(a === 'mode-coop' ? 'coop' : 'pvp');
   else if (a === 'leave') { Net.reset(); Menu.show('mMulti'); Menu.msg(''); }
 });
 $('mCode').addEventListener('keydown', e => { if (e.key === 'Enter') Net.join($('mCode').value); });
@@ -2329,7 +2343,9 @@ const lockedBy = new Map();
 const warnState = { incomingT: 9, beepT: 0, html: '' };
 J.hp = 100; J.dead = false; J.deadT = 0;
 const meId = () => Net.mode === 'solo' ? 'me' : Net.myId;
-const NET_EV = new Set(['hit', 'mhit', 'mlost', 'lock', 'kill']);
+const NET_EV = new Set(['hit', 'mhit', 'mlost', 'lock', 'kill', 'aihit', 'aikill']);
+const coopClient = () => Net.mode === 'client' && Net.gameMode === 'coop';
+const coopHost = () => Net.mode === 'host' && Net.gameMode === 'coop';
 function nameOf(id) { if (id == null) return ''; if (id === meId()) return 'YOU'; if (String(id).startsWith('ai')) return 'BANDIT'; const p = Net.players.get(id); return p ? p.name : 'PILOT'; }
 function updateScore() { $('score').textContent = gameOn ? `KILLS ${kills}` : ''; }
 function targetPos(id) {
@@ -2341,7 +2357,7 @@ function targetPos(id) {
 function enemies() {
   const out = [];
   for (const a of BANDITS) if (!a.dead) out.push({ id: a.id, p: [a.x, a.y, a.z], ai: a, color: '#ff5a48', name: 'BANDIT' });
-  for (const [id, pl] of Net.players) if (pl.d && pl.tgt && !pl.tgt.dead) out.push({ id, p: [pl.d.x, pl.d.y, pl.d.z], color: SLOT_COLORS[pl.slot] || '#ffffff', name: pl.name });
+  if (Net.gameMode === 'pvp') for (const [id, pl] of Net.players) if (pl.d && pl.tgt && !pl.tgt.dead) out.push({ id, p: [pl.d.x, pl.d.y, pl.d.z], color: SLOT_COLORS[pl.slot] || '#ffffff', name: pl.name });
   return out;
 }
 function shootBullet(pos, dir, vel, owner, spread) {
@@ -2383,13 +2399,51 @@ function respawnMe() {
   banner('BACK IN THE AIR');
 }
 function damageAI(a, dmg, by) {
-  if (a.dead) return; a.hp -= dmg;
-  if (a.hp <= 0) { a.dead = true; a.deadT = 1; airBurst(a.x, a.y, a.z, 1.3); if (by === meId()) { kills++; updateScore(); banner('BANDIT DOWN<small>' + kills + (kills === 1 ? ' kill' : ' kills') + '</small>'); } }
+  if (a.dead) return;
+  if (coopClient()) { Net.event({ t: 'aihit', id: a.id, dmg }); return; }
+  a.hp -= dmg;
+  if (a.hp <= 0) {
+    a.dead = true; a.deadT = 1; airBurst(a.x, a.y, a.z, 1.3);
+    if (by === meId()) { kills++; updateScore(); banner('BANDIT DOWN<small>' + kills + (kills === 1 ? ' kill' : ' kills') + '</small>'); }
+    else if (Net.mode !== 'solo') banner(nameOf(by) + ' downed a BANDIT');
+    if (coopHost()) Net.event({ t: 'aikill', id: a.id, killer: by, x: a.x, y: a.y, z: a.z });
+  }
+}
+function syncBandits(list) {
+  const now = performance.now(), seen = new Set();
+  for (const e of list) {
+    const [id, x, y, z, yaw, pitch, roll, hp, dead, vx, vy, vz, g] = e; seen.add(id);
+    let a = BANDITS.find(b => b.id === id);
+    if (!a) { a = { id, x: near(x, J.x), y, z: near(z, J.z), yaw, pitch, rollVis: roll, hp, dead: !!dead, vel: [vx, vy, vz], lockT: 0, b: ypr(yaw, pitch, roll), mirror: true }; BANDITS.push(a); }
+    a.tgt = { x, y, z, yaw, pitch, roll, vx, vy, vz, g }; a.t = now; a.hp = hp;
+    if (dead && !a.dead) a.dead = true;
+  }
+  for (let i = BANDITS.length - 1; i >= 0; i--) if (!seen.has(BANDITS[i].id)) BANDITS.splice(i, 1);
+}
+function updateMirrors(dt) {
+  const now = performance.now(), k = 1 - Math.exp(-dt * 9);
+  for (const a of BANDITS) {
+    const s = a.tgt; if (!s || a.dead) continue;
+    const age = Math.min((now - a.t) / 1000, .5), tx = near(s.x + s.vx * age, J.x), ty = s.y + s.vy * age, tz = near(s.z + s.vz * age, J.z);
+    a.x = near(a.x, J.x); a.z = near(a.z, J.z);
+    if (Math.hypot(tx - a.x, tz - a.z) > 400) { a.x = tx; a.y = ty; a.z = tz; } else { a.x += (tx - a.x) * k; a.y += (ty - a.y) * k; a.z += (tz - a.z) * k; }
+    a.yaw += wrapPI(s.yaw - a.yaw) * k; a.pitch += (s.pitch - a.pitch) * k; a.rollVis = (a.rollVis || 0) + wrapPI(s.roll - (a.rollVis || 0)) * k;
+    a.vel = [s.vx, s.vy, s.vz]; a.b = ypr(a.yaw, a.pitch, a.rollVis);
+    if (s.g) { a.acc = (a.acc || 0) + dt * 11; while (a.acc > 1) { a.acc--; shootBullet([a.x + a.b.F[0] * 9, a.y + a.b.F[1] * 9, a.z + a.b.F[2] * 9], a.b.F, a.vel, 'vis', .01); } }
+    if (a.hp < 40 && Math.random() < dt * 25) spawn(PK.DSMOKE, a.x, a.y, a.z, rnd(-2, 2), rnd(0, 3), rnd(-2, 2), rnd(2, 4), 3, rnd(9, 15), .3, -.5);
+  }
 }
 function netEvent(m) {
   if (m.t === 'hit') { if (m.to === Net.myId) damageMe(m.dmg, m.by, 'gun'); }
   else if (m.t === 'mhit') { const i = MIS.findIndex(q => q.mid === m.mid); if (i >= 0) MIS.splice(i, 1); airBurst(near(m.x, J.x), m.y, near(m.z, J.z), .7); updateMslUI(); }
   else if (m.t === 'mlost') { const q = MIS.find(q => q.mid === m.mid); if (q) q.lost = true; }
+  else if (m.t === 'aihit') { if (Net.mode === 'host') { const a = BANDITS.find(b => b.id === m.id); if (a) damageAI(a, m.dmg, m.by); } }
+  else if (m.t === 'aikill') {
+    if (Net.mode !== 'client') return;
+    const a = BANDITS.find(b => b.id === m.id); if (a && !a.dead) { a.dead = true; airBurst(a.x, a.y, a.z, 1.3); }
+    if (m.killer === Net.myId) { kills++; updateScore(); banner('BANDIT DOWN<small>' + kills + (kills === 1 ? ' kill' : ' kills') + '</small>'); }
+    else banner(nameOf(m.killer) + ' downed a BANDIT');
+  }
   else if (m.t === 'lock') { if (m.to === Net.myId) { if (m.on) lockedBy.set(m.by, T); else lockedBy.delete(m.by); } }
   else if (m.t === 'kill') {
     if (m.killer && m.killer === Net.myId) { kills++; updateScore(); }
@@ -2405,9 +2459,16 @@ function spawnBandit() {
 }
 function updateBandit(a, dt) {
   if (a.dead) { a.deadT -= dt; return; }
-  const tp = J.r, alive = !J.dead && invuln <= 0;
+  a.retarget = (a.retarget || 0) - dt;
+  if (a.retarget <= 0 || !a.tgtId || !targetPos(a.tgtId)) {
+    a.retarget = rnd(3, 6); let bestD = 1e12; a.tgtId = null;
+    const cands = [[meId(), !J.dead && invuln <= 0]]; if (coopHost()) for (const [id, pl] of Net.players) cands.push([id, pl.tgt && !pl.tgt.dead]);
+    for (const [id, ok] of cands) { if (!ok) continue; const t = targetPos(id); if (!t) continue; const dd = (t.p[0] - a.x) ** 2 + (t.p[1] - a.y) ** 2 + (t.p[2] - a.z) ** 2; if (dd < bestD) { bestD = dd; a.tgtId = id; } }
+  }
+  const tgo = a.tgtId ? targetPos(a.tgtId) : null;
+  const tp = tgo ? tgo.p : J.r, tv = tgo ? tgo.v : J.vel, alive = !!tgo && !(a.tgtId === meId() && invuln > 0);
   const lead = clamp(Math.hypot(tp[0] - a.x, tp[2] - a.z) / 900, 0, 1.2);
-  const tx = tp[0] + J.vel[0] * lead, ty = tp[1] + J.vel[1] * lead, tz = tp[2] + J.vel[2] * lead;
+  const tx = tp[0] + tv[0] * lead, ty = tp[1] + tv[1] * lead, tz = tp[2] + tv[2] * lead;
   const dx = tx - a.x, dy = ty - a.y, dz = tz - a.z, hd = Math.hypot(dx, dz), dist = Math.hypot(dx, dy, dz);
   let yawT = Math.atan2(dx, -dz); if (!alive) yawT = a.yaw + .4;
   a.jink += dt; const jink = Math.sin(a.jink * .7) * (dist < 700 ? .9 : .25);
@@ -2423,8 +2484,10 @@ function updateBandit(a, dt) {
   a.x += a.vel[0] * dt; a.y += a.vel[1] * dt; a.z += a.vel[2] * dt;
   const gg = Math.max(hAt(a.x, a.z), 0) + 15; if (a.y < gg) a.y = gg;
   let rr = 0; if (a.rollT >= 0) { a.rollT += dt; if (a.rollT >= 1) a.rollT = -1; else rr = smoother(a.rollT) * 6.283; }
-  a.b = ypr(a.yaw, a.pitch, a.bank + rr);
+  a.rollVis = a.bank + rr; a.b = ypr(a.yaw, a.pitch, a.rollVis);
   if (a.hp < 40 && Math.random() < dt * 25) spawn(PK.DSMOKE, a.x, a.y, a.z, rnd(-2, 2), rnd(0, 3), rnd(-2, 2), rnd(2, 4), 3, rnd(9, 15), .3, -.5);
+  const lockOn = alive && a.lockT > .25 && a.tgtId !== meId() ? a.tgtId : null;
+  if (lockOn !== (a.lockSent || null)) { if (a.lockSent) Net.event({ t: 'lock', to: a.lockSent, on: false, by: a.id }); if (lockOn) Net.event({ t: 'lock', to: lockOn, on: true, by: a.id }); a.lockSent = lockOn; }
   if (!alive) { a.lockT = 0; return; }
   const to = norm([tp[0] - a.x, tp[1] - a.y, tp[2] - a.z]), c = dot(to, a.b.F), rd = len([tp[0] - a.x, tp[1] - a.y, tp[2] - a.z]);
   // guns: short bursts when lined up
@@ -2437,8 +2500,11 @@ function updateBandit(a, dt) {
   if (a.lockT >= 2.2) {
     a.lockT = 0; a.misCd = rnd(10, 16);
     const p = [a.x - a.b.U[0] * 2, a.y - a.b.U[1] * 2, a.z - a.b.U[2] * 2], v = [a.vel[0] - a.b.U[0] * 7, a.vel[1] - a.b.U[1] * 7, a.vel[2] - a.b.U[2] * 7];
-    MIS.push({ p, v, age: 0, tgt: tp.slice(), lp: p.slice(), tid: meId(), mid: a.id + ':' + (++misSeq), owner: a.id });
-    warnState.incomingT = 0; Sfx.launch();
+    const mid = a.id + ':' + (++misSeq);
+    MIS.push({ p, v, age: 0, tgt: tp.slice(), lp: p.slice(), tid: a.tgtId, mid, owner: a.id });
+    if (a.tgtId === meId()) warnState.incomingT = 0;
+    if (coopHost()) Net.event({ t: 'f', p, v, tgt: tp.slice(), tid: a.tgtId, mid, by: a.id });
+    Sfx.launch();
   }
 }
 function updateCombat(dt) {
@@ -2463,6 +2529,9 @@ function updateCombat(dt) {
         BUL.splice(i, 1); break;
       }
     } else if (!J.dead && segHit(b.lp, b.p, J.r, 9)) { BUL.splice(i, 1); damageMe(4, b.owner, 'gun'); }
+    else if (coopHost() && String(b.owner).startsWith('ai')) {
+      for (const [id, pl] of Net.players) { if (!pl.d || !pl.tgt || pl.tgt.dead) continue; if (segHit(b.lp, b.p, [pl.d.x, pl.d.y, pl.d.z], 9)) { BUL.splice(i, 1); Net.event({ t: 'hit', to: id, dmg: 4, by: b.owner }); break; } }
+    }
   }
   // lock-on
   let best = null, bc = Math.cos(14 * DEG);
@@ -2473,12 +2542,15 @@ function updateCombat(dt) {
   const lockTo = LOCK.locked && !String(LOCK.id).startsWith('ai') ? LOCK.id : null;
   if (lockTo !== LOCK.sent) { if (LOCK.sent) Net.event({ t: 'lock', to: LOCK.sent, on: false }); if (lockTo) Net.event({ t: 'lock', to: lockTo, on: true }); LOCK.sent = lockTo; }
   // bandits (solo)
-  if (Net.mode === 'solo' && gameOn && input.moved) {
+  const aiRun = gameOn && (Net.mode === 'solo' ? input.moved : coopHost() && Net.started);
+  if (coopClient()) updateMirrors(dt);
+  else if (aiRun) {
     for (const a of BANDITS) updateBandit(a, dt);
     for (let i = BANDITS.length - 1; i >= 0; i--) if (BANDITS[i].dead && BANDITS[i].deadT <= 0) BANDITS.splice(i, 1);
     banditTimer -= dt;
-    if (BANDITS.length < 3 && banditTimer <= 0) { const first = !banditSeq; spawnBandit(); banditTimer = rnd(9, 15); if (first) { spawnBandit(); banner('BANDITS INBOUND<small>G / GUN to shoot · lock on for missiles · ROLL to dodge</small>'); } }
-  } else if (Net.mode !== 'solo' && BANDITS.length) BANDITS.length = 0;
+    const maxB = Net.mode === 'solo' ? 3 : 2 + Net.conns.size;
+    if (BANDITS.length < maxB && banditTimer <= 0) { const first = !banditSeq; spawnBandit(); banditTimer = rnd(9, 15); if (first) { spawnBandit(); banner('BANDITS INBOUND<small>G / GUN to shoot · lock on for missiles · ROLL to dodge</small>'); } }
+  } else if (BANDITS.length) BANDITS.length = 0;
   if (!J.dead && J.hp < 40 && Math.random() < dt * 25) spawn(PK.DSMOKE, J.r[0], J.r[1], J.r[2], rnd(-2, 2), rnd(0, 3), rnd(-2, 2), rnd(2, 4), 3, rnd(9, 15), .3, -.5);
   updateWarnings(dt);
 }
@@ -2488,7 +2560,7 @@ function updateWarnings(dt) {
   let inc = null, incD = 1e9;
   if (!J.dead) for (const m of MIS) if (m.tid === meId() && !m.lost) { const dd = len([m.p[0] - J.r[0], m.p[1] - J.r[1], m.p[2] - J.r[2]]); if (dd < incD) { incD = dd; inc = m; } }
   let locked = false;
-  if (!J.dead) { for (const a of BANDITS) if (!a.dead && a.lockT > .25) locked = true; for (const [id, t] of lockedBy) { if (T - t > 20 || !Net.players.has(id)) lockedBy.delete(id); else locked = true; } }
+  if (!J.dead) { for (const a of BANDITS) if (!a.dead && a.lockT > .25 && a.tgtId === meId()) locked = true; for (const [id, t] of lockedBy) { if (T - t > 20 || (!Net.players.has(id) && !String(id).startsWith('ai'))) lockedBy.delete(id); else locked = true; } }
   const ctl = gameOn && input.moved && !J.dead;
   if (ctl && J.pull) W2.push(['red blink', 'PULL UP']);
   if (inc) {
@@ -2597,7 +2669,7 @@ window.__patrol = {
   setView(v) { while (view !== v) cycleView(); blend.t = 1; },
   fire, barrelRoll, explode, takeControl,
   place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
-  hAt: (x, z) => hAt(x, z), J, input, TILT, Net, BANDITS, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
+  hAt: (x, z) => hAt(x, z), J, input, TILT, Net, BANDITS, damageAI, enemies, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
   dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
 };
 })();
