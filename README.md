@@ -24,6 +24,11 @@ Multiplayer is for 2 to 4 players online:
 2. Friends tap **MULTIPLAYER**, type the code and tap **JOIN**.
 3. The host picks the mode, **CO-OP vs BANDITS** (team up against AI jets) or **PVP** (fight each other), then taps **START** when everyone is in.
 
+**Lives and stages (multiplayer)**
+- Everyone has **3 lives**. Lose them all and you get one chance to **fix your jet**: a short repair mini game (tighten bolts, reconnect wires or pump the pressure gauge, two picked at random). Finish it to fly again with 1 life. Lose that too and you're out.
+- **CO-OP** has 3 stages: 3, 5, then 7 tougher bandits. Bandits don't come back once shot down. Clear a stage to move on; every new stage gives everyone 3 lives again. If the whole team is out, the stage restarts.
+- **PVP**: last pilot still flying wins the round, then a new round starts.
+
 You see each other's jets with name tags (markers at the screen edge point to friends who are out of view), and each other's missiles. It connects players directly using PeerJS, so it needs an internet connection; some strict networks may block it.
 
 ## Combat
@@ -42,7 +47,7 @@ You see each other's jets with name tags (markers at the screen edge point to fr
 - G (hold): guns · Right-click or F: missile · R: roll · Space: change view · M: sound · Arrows/WASD: steer
 
 **Phone**
-- Drag to steer, or tap **TILT** and lean the phone (left/right to turn, forward/back to dive/climb)
+- **Left thumb stick**: touch anywhere on the left half of the screen and drag (left/right = turn, up/down = climb/dive). Or tap **TILT** and lean the phone instead
 - GUN (hold) · MSL · ROLL · BURN · VIEW buttons
 - FULLSCREEN button in the top bar (not available on iPhone)
 

@@ -58,6 +58,14 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
 #warn .red{color:#ff5a48} #warn .amb{color:#ffb030} #warn .grn{color:#6ce07c}
 #warn .blink{animation:wbl .5s steps(2,end) infinite}
 @keyframes wbl{50%{opacity:.15}}
+#stick{position:fixed;left:24px;bottom:24px;width:120px;height:120px;margin:0;border:3px solid rgba(251,230,184,.28);border-radius:50%;background:rgba(18,13,27,.22);pointer-events:none;z-index:3;display:none;box-shadow:inset 0 0 0 2px rgba(18,13,27,.4)}
+#stick.on{display:block} #stick.act{border-color:rgba(251,230,184,.7);background:rgba(18,13,27,.35)}
+#knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:rgba(251,230,184,.55);border:3px solid #7a4468;box-shadow:0 3px 0 rgba(22,14,32,.6)}
+#stick.act #knob{background:#fbe6b8}
+#repair{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:8;display:flex;align-items:center;justify-content:center;background:rgba(10,7,16,.72)}
+#repair[hidden]{display:none}
+#repair .rbox{border:3px solid #fbe6b8;box-shadow:0 5px 0 #7a4468,0 0 0 6px rgba(10,7,16,.6)}
+#rcv{position:static;display:block;width:min(88vw,135vh,720px);height:auto;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none;cursor:pointer}
 #hitfx{position:fixed;inset:0;pointer-events:none;z-index:2;opacity:0;box-shadow:inset 0 0 90px 30px rgba(255,40,30,.75)}
 #hitfx.on{animation:hfx .45s ease-out}
 @keyframes hfx{0%{opacity:1}100%{opacity:0}}
@@ -136,6 +144,8 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
 </div>
 <div id="err"></div>
 <div id="warn"></div>
+<div id="stick"><div id="knob"></div></div>
+<div id="repair" hidden><div class="rbox"><canvas id="rcv" width="200" height="120"></canvas></div></div>
 <div id="hitfx"></div>
 <div id="country"></div>
 <script>
@@ -1574,11 +1584,12 @@ function updateJet(dt) {
   const ky = (input.keys.has('ArrowDown') || input.keys.has('KeyS') ? 1 : 0) - (input.keys.has('ArrowUp') || input.keys.has('KeyW') ? 1 : 0);
   const keyCtl = kx !== 0 || ky !== 0;
   J.ap = !input.moved;
-  if (J.dead) { J.deadT -= dt; if (J.deadT <= 0) respawnMe(); return; }
+  if (J.dead) { J.deadT -= dt; if (J.deadT <= 0) afterDeath(); return; }
   const ctl = gameOn && input.moved;
   if (J.ap) { tb = Math.sin(T * .3) * .62; tp = clamp((J.holdAlt - J.y) * .004, -.25, .25); }
   else if (view === 0) {
     if (keyCtl) { tb = kx * 1.05; J.holdAlt = clamp(J.holdAlt - ky * 320 * dt, 60, 5200); }
+    else if (STICK.active) { tb = STICK.x * 1.05; J.holdAlt = clamp(J.holdAlt - STICK.y * 320 * dt, 60, 5200); }
     else if (TILT.on) { tb = TILT.x * 1.05; J.holdAlt = clamp(J.holdAlt - TILT.y * 320 * dt, 60, 5200); }
     else { const w = cursorWorld(); if (w) { const dx = w[0] - J.x, dz = w[2] - J.z; if (dx * dx + dz * dz > 30 * 30) tb = clamp(wrapPI(Math.atan2(dx, -dz) - J.yaw) * 1.5, -1.2, 1.2); } }
     tp = clamp((J.holdAlt - J.y) * .004, -.4, .4);
@@ -1587,7 +1598,8 @@ function updateJet(dt) {
     if (input.touchSteer === false && input.touchUp) { nx = 0; ny = 0; }
     nx = dead(clamp(nx, -1, 1)); ny = dead(clamp(ny, -1, 1));
     if (keyCtl) { nx = kx; ny = ky; }
-    else if (TILT.on) { nx = TILT.x; if (steerId === null) ny = TILT.y; }
+    else if (STICK.active) { nx = STICK.x; ny = STICK.y; }
+    else if (TILT.on) { nx = TILT.x; ny = TILT.y; }
     tb = nx * 1.25; tp = -ny * .95; J.holdAlt = J.y;
   }
   // terrain look-ahead: never crash
@@ -1968,7 +1980,8 @@ function drawUI(dt) {
       continue;
     }
     const km = Math.hypot(q.x - CAM.p[0], q.y - CAM.p[1], q.z - CAM.p[2]) / 1000, c = col(SLOT_COLORS[pl.slot] || '#ffffff');
-    hud.text(pl.name, pr[0] + 1, pr[1] - 9, CRD, 1); hud.text(pl.name, pr[0], pr[1] - 10, c, 1);
+    const nm = pl.name + (livesOn() && pl.tgt ? ' ' + '♥'.repeat(0) + pl.tgt.lv : '');
+    hud.text(nm, pr[0] + 1, pr[1] - 9, CRD, 1); hud.text(nm, pr[0], pr[1] - 10, c, 1);
     if (km > .4) { const t = km.toFixed(1) + 'KM'; hud.text(t, pr[0] + 1, pr[1] - 2, CRD, 1); hud.text(t, pr[0], pr[1] - 3, c, 1); }
     hud.p(pr[0], pr[1] + 4, c); }
   drawCursor(hud);
@@ -2064,10 +2077,27 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => input.keys.delete(e.code));
 // touch: drag anywhere to steer, buttons for the rest
-let touchBurn = false, touchGun = false, steerId = null;
-glc.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; steerId = t.identifier; toInternal(t.clientX, t.clientY); input.touchUp = false; takeControl(); }, { passive: false });
-glc.addEventListener('touchmove', e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === steerId) toInternal(t.clientX, t.clientY); }, { passive: false });
-const touchEnd = e => { for (const t of e.changedTouches) if (t.identifier === steerId) { steerId = null; if (view !== 0) input.touchUp = true; } };
+let touchBurn = false, touchGun = false, steerId = null, IS_TOUCH = false;
+// touch: a virtual stick on the LEFT half of the screen (left/right = turn, up/down = climb/dive); the right half keeps its buttons
+const STICK = { active: false, x: 0, y: 0, ox: 0, oy: 0, R: 52 };
+const stickEl = document.getElementById('stick'), knobEl = document.getElementById('knob');
+function stickDraw() {
+  const r = STICK.R;
+  if (STICK.active) { stickEl.style.left = (STICK.ox - 60) + 'px'; stickEl.style.top = (STICK.oy - 60) + 'px'; stickEl.style.bottom = 'auto'; }
+  else { stickEl.style.left = '24px'; stickEl.style.top = 'auto'; stickEl.style.bottom = '24px'; }
+  knobEl.style.transform = `translate(${STICK.x * r}px, ${STICK.y * r}px)`;
+  stickEl.classList.toggle('act', STICK.active);
+}
+function stickMove(cx, cy) {
+  let dx = (cx - STICK.ox) / STICK.R, dy = (cy - STICK.oy) / STICK.R; const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; }
+  STICK.x = dx; STICK.y = dy; stickDraw();
+}
+glc.addEventListener('touchstart', e => {
+  e.preventDefault(); input.touchUp = true; takeControl();
+  for (const t of e.changedTouches) if (steerId === null && t.clientX < innerWidth / 2) { steerId = t.identifier; STICK.active = true; STICK.ox = t.clientX; STICK.oy = t.clientY; stickMove(t.clientX, t.clientY); }
+}, { passive: false });
+glc.addEventListener('touchmove', e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === steerId) stickMove(t.clientX, t.clientY); }, { passive: false });
+const touchEnd = e => { for (const t of e.changedTouches) if (t.identifier === steerId) { steerId = null; STICK.active = false; STICK.x = STICK.y = 0; stickDraw(); input.touchUp = true; } };
 glc.addEventListener('touchend', touchEnd); glc.addEventListener('touchcancel', touchEnd);
 const touchEl = document.getElementById('touch');
 // tilt steering: lean the phone left/right like a steering wheel
@@ -2101,8 +2131,8 @@ const TILT = { on: false, x: 0, y: 0, n: null, ny: null, raw: 0 };
   });
 }
 if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window && navigator.maxTouchPoints > 0) {
-  touchEl.classList.add('on');
-  document.getElementById('hints').innerHTML = '<b>Drag</b> or <b>TILT</b> steer<span class="s">·</span><b>GUN</b> hold to shoot<span class="s">·</span><b>MSL</b> missile<span class="s">·</span><b>ROLL</b> dodges missiles';
+  touchEl.classList.add('on'); IS_TOUCH = true;
+  document.getElementById('hints').innerHTML = '<b>Left thumb</b> stick or <b>TILT</b> steer<span class="s">·</span><b>GUN</b> hold to shoot<span class="s">·</span><b>MSL</b> missile<span class="s">·</span><b>ROLL</b> dodges missiles';
 }
 touchEl.querySelectorAll('button').forEach(bt => {
   const k = bt.dataset.k;
@@ -2125,7 +2155,7 @@ const Menu = {
   msg(t) { $('mMsg').textContent = t || ''; }, lmsg(t) { $('lMsg').textContent = t || ''; }
 };
 function beginGame() {
-  if (coopClient()) setTimeout(() => banner('BANDITS INBOUND<small>team up · G / GUN to shoot · ROLL to dodge</small>'), 6000);
+  STAGE.n = 0; STAGE.phase = 'idle'; STAGE.left = 0; LIFE.lives = 3; LIFE.repairUsed = false; LIFE.out = false;
   gameOn = true; kills = 0; deaths = 0; J.hp = 100; J.dead = false; updateScore(); titleEl.classList.add('gone'); $('menu').hidden = true;
   input.moved = false; promptEl.textContent = '';
   updateNetLabel();
@@ -2151,7 +2181,7 @@ const Net = {
     this.leaving = true;
     try { this.conn && this.conn.close(); } catch (_) {} try { this.peer && this.peer.destroy(); } catch (_) {}
     clearTimeout(this.joinTimer);
-    this.peer = this.conn = null; this.conns.clear(); this.gameMode = 'coop'; BANDITS.length = 0; this.players.clear(); this.mode = 'solo'; this.started = false; this.slot = 0; this.code = '';
+    this.peer = this.conn = null; this.conns.clear(); this.gameMode = 'coop'; BANDITS.length = 0; STAGE.n = 0; STAGE.phase = 'idle'; if (typeof Repair !== 'undefined' && Repair.active) { Repair.close(); if (J.dead) respawnMe(); } this.players.clear(); this.mode = 'solo'; this.started = false; this.slot = 0; this.code = '';
     setTimeout(() => { this.leaving = false; }, 50); updateNetLabel();
   },
   roster() { const r = [{ id: this.mode === 'host' ? this.myId : 'host', name: this.mode === 'host' ? this.name : '', slot: 0, host: true }]; for (const [id, c] of this.conns) r.push({ id, name: c.name, slot: c.slot }); return r; },
@@ -2250,7 +2280,7 @@ const Net = {
     } else if (m.t === 'full') { Menu.msg('That room is full (4 players max).'); this.reset(); }
     else if (m.t === 'roster') { if (m.gm) { this.gameMode = m.gm; this.showMode(); } for (const p of m.r) if (p.host && !p.name) p.name = 'HOST'; this.showRoster(m.r); if (!this.started) Menu.lmsg('Waiting for the host to start…'); }
     else if (m.t === 'start') { if (m.gm) this.gameMode = m.gm; this.started = true; this.showMode(); spawnNear(m.sp, this.slot); beginGame(); }
-    else if (m.t === 's') { this.lastS = performance.now(); for (const e of m.l) if (e.id !== this.myId) setRemote(e.id, e.n, e.sl, e); if (m.ai) syncBandits(m.ai); updateNetLabel(); }
+    else if (m.t === 's') { this.lastS = performance.now(); for (const e of m.l) if (e.id !== this.myId) setRemote(e.id, e.n, e.sl, e); if (m.ai) syncBandits(m.ai); if (m.st) { STAGE.n = m.st[0]; STAGE.left = m.st[1]; STAGE.phase = m.st[2]; } updateNetLabel(); }
     else if (m.t === 'f') applyFire(m);
     else if (NET_EV.has(m.t)) netEvent(m);
     else if (m.t === 'left') { this.players.delete(m.id); updateNetLabel(); }
@@ -2261,7 +2291,7 @@ const Net = {
     if (wasOn) banner('Host left the room'); else { Menu.show('mMulti'); Menu.msg('Lost connection to the room.'); }
   },
   // ---------- per-frame ----------
-  myState() { return { x: J.r[0], y: J.r[1], z: J.r[2], yaw: J.yaw, pitch: J.pitch, roll: J.rollVis, ab: +J.ab.toFixed(2), vx: J.vel[0], vy: J.vel[1], vz: J.vel[2], hp: Math.round(J.hp), dead: J.dead ? 1 : 0, gun: gunFiring ? 1 : 0 }; },
+  myState() { return { x: J.r[0], y: J.r[1], z: J.r[2], yaw: J.yaw, pitch: J.pitch, roll: J.rollVis, ab: +J.ab.toFixed(2), vx: J.vel[0], vy: J.vel[1], vz: J.vel[2], hp: Math.round(J.hp), dead: J.dead ? 1 : 0, gun: gunFiring ? 1 : 0, lv: LIFE.lives, out: LIFE.out ? 1 : 0, rp: Repair.active ? 1 : 0 }; },
   event(m) { if (this.mode === 'solo' || !this.started) return; m.by = m.by || this.myId; if (this.mode === 'host') this.broadcast(m); else if (this.conn && this.conn.open) try { this.conn.send(m); } catch (_) {} },
   tick(dt) {
     if (this.mode === 'solo' || !this.started) return;
@@ -2273,7 +2303,7 @@ const Net = {
       for (const [id] of this.conns) { const p = this.players.get(id); if (p && now - p.t > 12000) this.hostDrop(id); }
       const l = [{ id: this.myId, n: this.name, sl: 0, ...this.myState() }];
       for (const [id, c] of this.conns) { const p = this.players.get(id); if (p) l.push({ id, n: c.name, sl: c.slot, ...p.tgt }); }
-      const msg = { t: 's', l }; if (this.gameMode === 'coop') msg.ai = BANDITS.map(a => [a.id, Math.round(a.x * 10) / 10, Math.round(a.y * 10) / 10, Math.round(a.z * 10) / 10, +a.yaw.toFixed(3), +a.pitch.toFixed(3), +(a.rollVis || 0).toFixed(3), Math.round(a.hp), a.dead ? 1 : 0, Math.round(a.vel[0]), Math.round(a.vel[1]), Math.round(a.vel[2]), a.burst > 0 ? 1 : 0]);
+      const msg = { t: 's', l, st: [STAGE.n, BANDITS.filter(a => !a.dead).length, STAGE.phase] }; if (this.gameMode === 'coop') msg.ai = BANDITS.map(a => [a.id, Math.round(a.x * 10) / 10, Math.round(a.y * 10) / 10, Math.round(a.z * 10) / 10, +a.yaw.toFixed(3), +a.pitch.toFixed(3), +(a.rollVis || 0).toFixed(3), Math.round(a.hp), a.dead ? 1 : 0, Math.round(a.vel[0]), Math.round(a.vel[1]), Math.round(a.vel[2]), a.burst > 0 ? 1 : 0]);
       this.broadcast(msg);
     }
   },
@@ -2289,7 +2319,7 @@ try { const n = localStorage.getItem('patrolName'); if (n) $('mName').value = n;
 function banner(text) { countryEl.innerHTML = text; countryEl.classList.remove('show'); void countryEl.offsetWidth; countryEl.classList.add('show'); }
 function setRemote(id, name, slot, s) {
   let p = Net.players.get(id); if (!p) { p = { d: null }; Net.players.set(id, p); }
-  p.name = name; p.slot = slot; p.tgt = { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, roll: s.roll, ab: s.ab, vx: s.vx, vy: s.vy, vz: s.vz, hp: s.hp == null ? 100 : s.hp, dead: !!s.dead, gun: !!s.gun }; p.t = performance.now();
+  p.name = name; p.slot = slot; p.tgt = { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, roll: s.roll, ab: s.ab, vx: s.vx, vy: s.vy, vz: s.vz, hp: s.hp == null ? 100 : s.hp, dead: !!s.dead, gun: !!s.gun, lv: s.lv == null ? 3 : s.lv, out: !!s.out, rp: !!s.rp }; p.t = performance.now();
 }
 const near = (v, ref) => v - WORLD * Math.round((v - ref) / WORLD);
 function applyFire(m) {
@@ -2343,11 +2373,157 @@ const lockedBy = new Map();
 const warnState = { incomingT: 9, beepT: 0, html: '' };
 J.hp = 100; J.dead = false; J.deadT = 0;
 const meId = () => Net.mode === 'solo' ? 'me' : Net.myId;
-const NET_EV = new Set(['hit', 'mhit', 'mlost', 'lock', 'kill', 'aihit', 'aikill']);
+const NET_EV = new Set(['hit', 'mhit', 'mlost', 'lock', 'kill', 'aihit', 'aikill', 'stage']);
 const coopClient = () => Net.mode === 'client' && Net.gameMode === 'coop';
 const coopHost = () => Net.mode === 'host' && Net.gameMode === 'coop';
 function nameOf(id) { if (id == null) return ''; if (id === meId()) return 'YOU'; if (String(id).startsWith('ai')) return 'BANDIT'; const p = Net.players.get(id); return p ? p.name : 'PILOT'; }
-function updateScore() { $('score').textContent = gameOn ? `KILLS ${kills}` : ''; }
+function updateScore() {
+  if (!gameOn) { $('score').textContent = ''; return; }
+  const parts = [];
+  if (coopHost() || coopClient()) { if (STAGE.n) parts.push(`STAGE ${STAGE.n}/${STAGES.length}` + (STAGE.phase === 'fight' ? ` · ${STAGE.left ?? BANDITS.filter(a => !a.dead).length} LEFT` : '')); }
+  if (livesOn()) parts.push('♥'.repeat(LIFE.lives) + '♡'.repeat(Math.max(0, 3 - LIFE.lives)));
+  parts.push(`KILLS ${kills}`);
+  $('score').textContent = parts.join(' · ');
+}
+/* ---------- lives (multiplayer), stages (co-op), jet repair mini game ---------- */
+const STAGES = [{ n: 3, hp: 100 }, { n: 5, hp: 110 }, { n: 7, hp: 150 }];
+const STAGE = { n: 0, phase: 'idle', t: 0, left: 0, winner: null };
+const LIFE = { lives: 3, repairUsed: false, out: false };
+const livesOn = () => Net.mode !== 'solo' && Net.started;
+function resetLives() { LIFE.lives = 3; LIFE.repairUsed = false; LIFE.out = false; if (Repair.active) Repair.close(); if (J.dead) respawnMe(); updateScore(); }
+function afterDeath() {
+  if (!livesOn()) { respawnMe(); return; }
+  J.deadT = 1e9;
+  if (LIFE.lives > 0) { respawnMe(); updateScore(); return; }
+  if (!LIFE.repairUsed) { Repair.open(() => { LIFE.repairUsed = true; LIFE.lives = 1; respawnMe(); banner('JET REPAIRED<small>last life — make it count</small>'); updateScore(); }); return; }
+  LIFE.out = true; updateScore();
+  banner('OUT OF LIVES<small>' + (Net.gameMode === 'coop' ? 'you come back next stage' : 'watching the rest of the match') + '</small>');
+}
+function stageEvent(m) {
+  if (m.phase === 'start') { STAGE.n = m.n; STAGE.phase = 'fight'; resetLives(); banner(`STAGE ${m.n}<small>${STAGES[m.n - 1].n} bandits · no reinforcements · 3 lives each</small>`); }
+  else if (m.phase === 'clear') { STAGE.phase = 'clear'; banner(`STAGE ${m.n} CLEAR<small>${m.n < STAGES.length ? 'next stage in 6 seconds' : ''}</small>`); }
+  else if (m.phase === 'fail') { STAGE.phase = 'fail'; banner(`MISSION FAILED<small>retrying stage ${m.n} in 6 seconds</small>`); }
+  else if (m.phase === 'win') { STAGE.phase = 'win'; banner('MISSION COMPLETE<small>all bandits destroyed · restarting in 12 seconds</small>'); }
+  else if (m.phase === 'pvpwin') { STAGE.phase = 'over'; banner((m.winner ? `${nameOf(m.winner)} WINS` : 'DRAW') + '<small>new round in 8 seconds</small>'); }
+  else if (m.phase === 'pvpreset') { STAGE.phase = 'fight'; resetLives(); banner('NEW ROUND<small>3 lives each · last pilot flying wins</small>'); }
+  updateScore();
+}
+function hostEvent(m) { stageEvent(m); Net.event(m); }
+function playersOut() {   // [total, stillFlying ids]
+  const ids = []; let total = 1; if (!LIFE.out) ids.push(Net.myId);
+  for (const [id, pl] of Net.players) { if (!Net.conns.has(id)) continue; total++; if (!(pl.tgt && pl.tgt.out)) ids.push(id); }
+  return [total, ids];
+}
+function updateStages(dt) {
+  if (Net.mode !== 'host' || !Net.started) return;
+  STAGE.t -= dt;
+  if (Net.gameMode === 'coop') {
+    if (STAGE.phase === 'idle') { STAGE.phase = 'wait'; STAGE.t = 4; STAGE.next = 1; }
+    if (STAGE.phase === 'wait' && STAGE.t <= 0) startStage(STAGE.next);
+    else if (STAGE.phase === 'fight') {
+      const [, flying] = playersOut();
+      if (!flying.length) { hostEvent({ t: 'stage', phase: 'fail', n: STAGE.n }); STAGE.t = 6; STAGE.next = STAGE.n; }
+      else if (!BANDITS.length) { hostEvent({ t: 'stage', phase: 'clear', n: STAGE.n }); STAGE.t = 6; STAGE.next = STAGE.n + 1; }
+    }
+    else if ((STAGE.phase === 'clear' || STAGE.phase === 'fail') && STAGE.t <= 0) { if (STAGE.next > STAGES.length) { hostEvent({ t: 'stage', phase: 'win', n: STAGE.n }); STAGE.t = 12; } else startStage(STAGE.next); }
+    else if (STAGE.phase === 'win' && STAGE.t <= 0) startStage(1);
+  } else {
+    if (STAGE.phase === 'idle') STAGE.phase = 'fight';
+    if (STAGE.phase === 'fight') { const [total, flying] = playersOut(); if (total >= 2 && flying.length <= 1) { hostEvent({ t: 'stage', phase: 'pvpwin', winner: flying[0] || null }); STAGE.t = 8; } }
+    else if (STAGE.phase === 'over' && STAGE.t <= 0) hostEvent({ t: 'stage', phase: 'pvpreset' });
+  }
+}
+function startStage(n) {
+  BANDITS.length = 0; const S = STAGES[n - 1];
+  for (let i = 0; i < S.n; i++) { spawnBandit(); const a = BANDITS[BANDITS.length - 1]; a.hp = S.hp; a.misCd = rnd(6, 14); }
+  hostEvent({ t: 'stage', phase: 'start', n });
+}
+const Repair = {
+  active: false, el: document.getElementById('repair'), cv: document.getElementById('rcv'), pb: new PB(200, 120), tasks: [], ti: 0, st: null, done: null, msgT: 0, msg: '', hold: false, fin: 0,
+  open(done) {
+    this.active = true; this.done = done; this.fin = 0;
+    const all = ['bolts', 'wires', 'gauge']; for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
+    this.tasks = all.slice(0, 2); this.ti = 0; this.begin(); this.el.hidden = false;
+  },
+  close() { this.active = false; this.el.hidden = true; },
+  begin() {
+    const k = this.tasks[this.ti], s = this.st = { k, t: 0 };
+    if (k === 'bolts') { s.bolts = []; while (s.bolts.length < 5) { const b = { x: 24 + Math.random() * 152, y: 44 + Math.random() * 56, n: 0, spin: 0 }; if (s.bolts.every(o => Math.hypot(o.x - b.x, o.y - b.y) > 26)) s.bolts.push(b); } }
+    if (k === 'wires') { const C = ['#ff4a38', '#ffd040', '#7ac8ff', '#6ce07c']; s.L = C.map((c, i) => ({ c, y: 46 + i * 17 })); const sh = C.slice().sort(() => Math.random() - .5); s.Rt = sh.map((c, i) => ({ c, y: 46 + i * 17 })); s.sel = -1; s.done = new Set(); }
+    if (k === 'gauge') { s.v = 0; s.ok = 0; s.z = .45 + Math.random() * .3; }
+  },
+  next() { this.ti++; if (this.ti >= this.tasks.length) { this.fin = 1.2; Sfx.tone(600, 1200, .3, .12); } else { this.begin(); Sfx.tone(800, 1000, .12, .1); } },
+  say(t) { this.msg = t; this.msgT = 1.2; },
+  pt(e) { const r = this.cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 200, (e.clientY - r.top) / r.height * 120]; },
+  down(e) {
+    if (!this.active || this.fin) return; const [x, y] = this.pt(e), s = this.st;
+    if (s.k === 'bolts') for (const b of s.bolts) if (b.n < 3 && Math.hypot(x - b.x, y - b.y) < 12) { b.n++; b.spin = 1; Sfx.tone(1400, 900, .05, .08, 0, 'square'); if (s.bolts.every(o => o.n >= 3)) this.next(); break; }
+    if (s.k === 'wires') {
+      for (let i = 0; i < 4; i++) if (!s.done.has(s.L[i].c) && Math.abs(x - 26) < 14 && Math.abs(y - s.L[i].y) < 8) { s.sel = i; Sfx.click(); return; }
+      if (s.sel >= 0) for (const r of s.Rt) if (Math.abs(x - 174) < 14 && Math.abs(y - r.y) < 8) {
+        if (r.c === s.L[s.sel].c) { s.done.add(r.c); s.sel = -1; Sfx.tone(900, 1300, .1, .1); if (s.done.size === 4) this.next(); }
+        else { this.say('WRONG WIRE!'); s.sel = -1; Sfx.tone(200, 120, .2, .12, 0, 'square'); }
+        return;
+      }
+    }
+    if (s.k === 'gauge') this.hold = true;
+  },
+  up() {
+    if (!this.active || this.fin) return; const s = this.st;
+    if (s.k === 'gauge' && this.hold) {
+      this.hold = false;
+      if (s.v >= s.z && s.v <= s.z + .16) { s.ok++; this.say('GOOD!'); Sfx.tone(900, 1300, .1, .1); if (s.ok >= 3) { this.next(); return; } s.z = .3 + Math.random() * .5; }
+      else if (s.v > .02) { this.say(s.v < s.z ? 'TOO LOW' : 'TOO HIGH'); Sfx.tone(200, 120, .2, .12, 0, 'square'); }
+      s.v = 0;
+    }
+  },
+  update(dt) {
+    if (!this.active) return;
+    if (this.fin) { this.fin -= dt; if (this.fin <= 0) { const f = this.done; this.close(); f && f(); return; } }
+    const s = this.st; s.t += dt; if (this.msgT > 0) this.msgT -= dt;
+    if (s.k === 'gauge' && this.hold && !this.fin) { s.v += dt * .55; if (s.v >= 1) { s.v = 0; this.hold = false; this.say('OVERLOAD!'); Sfx.tone(300, 100, .3, .12, 0, 'square'); } }
+    if (s.k === 'bolts') for (const b of s.bolts) b.spin = Math.max(0, b.spin - dt * 4);
+    this.draw();
+  },
+  draw() {
+    const pb = this.pb, s = this.st, C = h => col(h);
+    for (let y = 0; y < 120; y++) for (let x = 0; x < 200; x++) pb.p(x, y, ((x >> 3) + (y >> 3)) & 1 ? C('#2e2b40') : C('#2a2738'));
+    pb.rect(0, 0, 200, 16, C('#16131e')); pb.rect(0, 16, 200, 1, C('#4e4964'));
+    pb.text('REPAIR YOUR JET', 6, 6, C('#fbe6b8'));
+    for (let i = 0; i < this.tasks.length; i++) { const on = i < this.ti || this.fin, cur = i === this.ti && !this.fin; pb.rect(150 + i * 22, 5, 18, 7, on ? C('#6ce07c') : cur ? C('#ffb030') : C('#4a4058')); }
+    for (const [x, y] of [[4, 22], [194, 22], [4, 114], [194, 114]]) { pb.rect(x, y, 2, 2, C('#8a86a0')); pb.p(x + 1, y + 1, C('#16131e')); }
+    const ins = { bolts: 'TAP EACH LOOSE BOLT 3 TIMES', wires: 'TAP A WIRE, THEN ITS MATCHING PLUG', gauge: 'HOLD TO PUMP - LET GO IN THE GREEN' }[s.k];
+    if (this.fin) { pb.text('JET FIXED!', 100, 60, C('#6ce07c'), 1); this.blit(); return; }
+    pb.text(ins, 100, 24, C('#a89cb8'), 1);
+    if (s.k === 'bolts') for (const b of s.bolts) {
+      const tight = b.n >= 3; pb.disc(Math.round(b.x), Math.round(b.y) + 1, 9, C('#16131e')); pb.disc(Math.round(b.x), Math.round(b.y), 9, tight ? C('#6ce07c') : (Math.sin(T * 8) > 0 ? C('#ffb030') : C('#e08a24')));
+      pb.disc(Math.round(b.x), Math.round(b.y), 6, C('#cfd0d8')); const a = b.n * 1.2 + b.spin * 2; pb.line(b.x - Math.cos(a) * 5, b.y - Math.sin(a) * 5, b.x + Math.cos(a) * 5, b.y + Math.sin(a) * 5, C('#3c3444'));
+      for (let k = 0; k < 3; k++) pb.rect(Math.round(b.x) - 5 + k * 4, Math.round(b.y) + 12, 3, 2, k < b.n ? C('#6ce07c') : C('#4a4058'));
+    }
+    if (s.k === 'wires') {
+      pb.rect(10, 38, 22, 72, C('#16131e')); pb.rect(168, 38, 22, 72, C('#16131e'));
+      s.L.forEach((w, i) => { pb.rect(14, w.y - 3, 14, 7, C(w.c)); if (i === s.sel && (T * 6 % 1) < .6) pb.frame(12, w.y - 5, 18, 11, C('#ffffff')); });
+      for (const r of s.Rt) pb.rect(172, r.y - 3, 14, 7, C(r.c));
+      for (const c of s.done) { const a = s.L.find(w => w.c === c), b = s.Rt.find(w => w.c === c); for (let o = -1; o <= 1; o++) pb.line(28, a.y + o, 172, b.y + o, C(c)); }
+      if (s.sel >= 0) pb.line(28, s.L[s.sel].y, 100, s.L[s.sel].y, C(s.L[s.sel].c), 3);
+    }
+    if (s.k === 'gauge') {
+      const gx = 60, gy = 36, gw = 80, gh = 70;
+      pb.rect(gx - 2, gy - 2, gw + 4, gh + 4, C('#16131e'));
+      const zy0 = gy + gh - Math.round((s.z + .16) * gh), zy1 = gy + gh - Math.round(s.z * gh); pb.rect(gx, zy0, gw, zy1 - zy0, C('#2a4038')); pb.frame(gx, zy0, gw, zy1 - zy0, C('#6ce07c'));
+      const fh = Math.round(s.v * gh); pb.rect(gx + 8, gy + gh - fh, gw - 16, fh, s.v > s.z + .16 ? C('#ff4a38') : C('#ffb030'));
+      for (let k = 0; k <= 10; k++) pb.rect(gx - 6, gy + Math.round(k * gh / 10), 4, 1, C('#8a86a0'));
+      for (let k = 0; k < 3; k++) pb.rect(gx + gw + 10, gy + 50 - k * 12, 10, 8, k < s.ok ? C('#6ce07c') : C('#4a4058'));
+      pb.text(this.hold ? 'PUMPING...' : 'HOLD', gx + gw / 2, gy + gh + 5, C('#fbe6b8'), 1);
+    }
+    if (this.msgT > 0) { pb.rect(60, 50, 80, 13, C('#16131e')); pb.text(this.msg, 100, 54, this.msg === 'GOOD!' ? C('#6ce07c') : C('#ff4a38'), 1); }
+    this.blit();
+  },
+  blit() { this.cv.getContext('2d').putImageData(this.pb.img, 0, 0); }
+};
+Repair.cv.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); Repair.down(e); });
+addEventListener('pointerup', e => Repair.up(e)); addEventListener('pointercancel', e => Repair.up(e));
+Repair.el.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
 function targetPos(id) {
   if (id === meId()) return J.dead ? null : { p: J.r, v: J.vel };
   if (String(id).startsWith('ai')) { const a = BANDITS.find(b => b.id === id); return a && !a.dead ? { p: [a.x, a.y, a.z], v: a.vel, ai: a } : null; }
@@ -2387,8 +2563,10 @@ function damageMe(dmg, by, kind) {
 function killMe(by, how) {
   if (J.dead) return;
   J.hp = 0; J.dead = true; J.deadT = 4; deaths++;
+  if (livesOn()) LIFE.lives = Math.max(0, LIFE.lives - 1);
   if (how === 'ground' || how === 'water') explode(J.x, Math.max(hAt(J.x, J.z), 0), J.z, how === 'water'); else airBurst(J.r[0], J.r[1], J.r[2], 1.3);
-  banner(by ? 'SHOT DOWN<small>by ' + nameOf(by) + '</small>' : 'CRASHED<small>' + (how === 'water' ? 'into the water' : 'into the ground') + '</small>');
+  const lifeTxt = livesOn() ? (LIFE.lives > 0 ? ` · ${LIFE.lives} ${LIFE.lives === 1 ? 'life' : 'lives'} left` : (LIFE.repairUsed ? ' · no lives left' : ' · fix your jet to fly again')) : '';
+  banner((by ? 'SHOT DOWN<small>by ' + nameOf(by) : how === 'air' ? 'DESTROYED<small>' + 'your jet broke apart' : 'CRASHED<small>' + (how === 'water' ? 'into the water' : 'into the ground')) + lifeTxt + '</small>');
   for (const m of MIS) if (m.tid === meId()) m.lost = true;
   Net.event({ t: 'kill', victim: Net.myId, killer: by || null });
 }
@@ -2437,6 +2615,7 @@ function netEvent(m) {
   if (m.t === 'hit') { if (m.to === Net.myId) damageMe(m.dmg, m.by, 'gun'); }
   else if (m.t === 'mhit') { const i = MIS.findIndex(q => q.mid === m.mid); if (i >= 0) MIS.splice(i, 1); airBurst(near(m.x, J.x), m.y, near(m.z, J.z), .7); updateMslUI(); }
   else if (m.t === 'mlost') { const q = MIS.find(q => q.mid === m.mid); if (q) q.lost = true; }
+  else if (m.t === 'stage') stageEvent(m);
   else if (m.t === 'aihit') { if (Net.mode === 'host') { const a = BANDITS.find(b => b.id === m.id); if (a) damageAI(a, m.dmg, m.by); } }
   else if (m.t === 'aikill') {
     if (Net.mode !== 'client') return;
@@ -2548,10 +2727,14 @@ function updateCombat(dt) {
     for (const a of BANDITS) updateBandit(a, dt);
     for (let i = BANDITS.length - 1; i >= 0; i--) if (BANDITS[i].dead && BANDITS[i].deadT <= 0) BANDITS.splice(i, 1);
     banditTimer -= dt;
-    const maxB = Net.mode === 'solo' ? 3 : 2 + Net.conns.size;
+    if (Net.mode !== 'solo') banditTimer = 99;
+    const maxB = Net.mode === 'solo' ? 3 : 0;
     if (BANDITS.length < maxB && banditTimer <= 0) { const first = !banditSeq; spawnBandit(); banditTimer = rnd(9, 15); if (first) { spawnBandit(); banner('BANDITS INBOUND<small>G / GUN to shoot · lock on for missiles · ROLL to dodge</small>'); } }
   } else if (BANDITS.length) BANDITS.length = 0;
   if (!J.dead && J.hp < 40 && Math.random() < dt * 25) spawn(PK.DSMOKE, J.r[0], J.r[1], J.r[2], rnd(-2, 2), rnd(0, 3), rnd(-2, 2), rnd(2, 4), 3, rnd(9, 15), .3, -.5);
+  updateStages(dt); Repair.update(dt);
+  if ((T * 4 | 0) !== (updateCombat.k || 0)) { updateCombat.k = T * 4 | 0; updateScore(); }
+  stickEl.classList.toggle('on', IS_TOUCH && gameOn && !J.dead && !Repair.active);
   updateWarnings(dt);
 }
 function updateWarnings(dt) {
@@ -2669,7 +2852,8 @@ window.__patrol = {
   setView(v) { while (view !== v) cycleView(); blend.t = 1; },
   fire, barrelRoll, explode, takeControl,
   place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
-  hAt: (x, z) => hAt(x, z), J, input, TILT, Net, BANDITS, damageAI, enemies, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
+  sim(sec) { for (let i = 0; i < sec * 20; i++) step(.05); },
+  hAt: (x, z) => hAt(x, z), J, input, TILT, STICK, Net, LIFE, STAGE, Repair, killMe, BANDITS, damageAI, enemies, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
   dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
 };
 })();
