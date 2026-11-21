@@ -78,6 +78,9 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
 @keyframes bl{50%{opacity:.25}}
 #touch{display:none;position:fixed;right:10px;bottom:10px;gap:8px;z-index:3;flex-wrap:wrap;justify-content:flex-end;max-width:200px}
 #touch.on{display:flex}
+body.pad #touch, body.pad #stick, body.pad #tiltBtn{display:none!important}
+#menu .pfocus{outline:3px solid #6ce07c;outline-offset:3px}
+#padTag{color:#6ce07c;font-weight:600;letter-spacing:.08em;display:none} body.pad #padTag{display:block}
 #touch button{width:62px;height:46px;font:600 11px "IBM Plex Mono",monospace;letter-spacing:.08em;color:var(--ink);background:rgba(18,13,27,.6);border:2px solid rgba(246,230,207,.45);touch-action:none}
 #touch button.hot{background:var(--accent);color:#1b1322}
 #touch button.lit{background:#6ce07c;border-color:#6ce07c;color:#1b1322}
@@ -87,6 +90,7 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
 <canvas id="ui"></canvas>
 <div id="strip">
   <div id="hints"><b>Mouse</b> steer<span class="s">·</span><b>Click</b> roll<span class="s">·</span><b>Hold</b> burner<span class="s">·</span><b>Right-click / F</b> missile<span class="s">·</span><b>G</b> guns<span class="s">·</span><b>Space</b> view</div>
+  <div id="padTag">🎮 CONTROLLER</div>
   <div id="net"></div>
   <div id="view">CHASE</div>
   <div id="score"></div>
@@ -118,7 +122,7 @@ canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;image-
   <div id="bar"><div></div></div>
   <div id="prompt">Shaping the land&hellip;</div>
   <div id="menu" hidden>
-    <div class="mrow" id="mMain"><button data-a="solo">SOLO</button><button data-a="multi">MULTIPLAYER</button></div>
+    <div class="mcol" id="mMain"><div class="mrow"><button data-a="solo">SOLO</button><button data-a="multi">MULTIPLAYER</button></div><button data-a="ctrl" class="sm" id="bCtrl">CONTROLS: AUTO</button></div>
     <div class="mcol" id="mMulti" hidden>
       <input id="mName" maxlength="10" placeholder="YOUR NAME" autocomplete="off" spellcheck="false">
       <button data-a="host">HOST A ROOM</button>
@@ -1590,6 +1594,7 @@ function updateJet(dt) {
   else if (view === 0) {
     if (keyCtl) { tb = kx * 1.05; J.holdAlt = clamp(J.holdAlt - ky * 320 * dt, 60, 5200); }
     else if (STICK.active) { tb = STICK.x * 1.05; J.holdAlt = clamp(J.holdAlt - STICK.y * 320 * dt, 60, 5200); }
+    else if (Pad.on && !TILT.on) { tb = Pad.x * 1.05; J.holdAlt = clamp(J.holdAlt - Pad.y * 320 * dt, 60, 5200); }
     else if (TILT.on) { tb = TILT.x * 1.05; J.holdAlt = clamp(J.holdAlt - TILT.y * 320 * dt, 60, 5200); }
     else { const w = cursorWorld(); if (w) { const dx = w[0] - J.x, dz = w[2] - J.z; if (dx * dx + dz * dz > 30 * 30) tb = clamp(wrapPI(Math.atan2(dx, -dz) - J.yaw) * 1.5, -1.2, 1.2); } }
     tp = clamp((J.holdAlt - J.y) * .004, -.4, .4);
@@ -1599,6 +1604,7 @@ function updateJet(dt) {
     nx = dead(clamp(nx, -1, 1)); ny = dead(clamp(ny, -1, 1));
     if (keyCtl) { nx = kx; ny = ky; }
     else if (STICK.active) { nx = STICK.x; ny = STICK.y; }
+    else if (Pad.on && !TILT.on) { nx = Pad.x; ny = Pad.y; }
     else if (TILT.on) { nx = TILT.x; ny = TILT.y; }
     tb = nx * 1.25; tp = -ny * .95; J.holdAlt = J.y;
   }
@@ -2134,6 +2140,69 @@ if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window && navig
   touchEl.classList.add('on'); IS_TOUCH = true;
   document.getElementById('hints').innerHTML = '<b>Left thumb</b> stick or <b>TILT</b> steer<span class="s">·</span><b>GUN</b> hold to shoot<span class="s">·</span><b>MSL</b> missile<span class="s">·</span><b>ROLL</b> dodges missiles';
 }
+const HINTS_DEFAULT = document.getElementById('hints').innerHTML;
+const HINTS_PAD = '<b>L stick</b> steer<span class="s">·</span><b>RT / X</b> guns<span class="s">·</span><b>RB / B</b> missile<span class="s">·</span><b>LB / A</b> roll<span class="s">·</span><b>LT</b> burner<span class="s">·</span><b>Y</b> view';
+/* ---------- game controller (standard gamepad layout, e.g. GameSir X5 Lite) ---------- */
+const PB_ = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, VIEW: 8, MENU: 9, LS: 10, RS: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+const Pad = {
+  pref: 'auto', using: false, on: false, prev: [], x: 0, y: 0, gun: false, burn: false, navT: 0, focus: null,
+  init() { try { const v = localStorage.getItem('patrolCtrl'); if (v) this.pref = v; } catch (_) {} this.apply(); },
+  cycle() { this.pref = { auto: 'pad', pad: 'phone', phone: 'auto' }[this.pref]; try { localStorage.setItem('patrolCtrl', this.pref); } catch (_) {} this.apply(); },
+  apply() {
+    const on = this.pref === 'pad' || (this.pref === 'auto' && this.using);
+    if (on !== this.on || !this._init) { this._init = true; this.on = on; document.body.classList.toggle('pad', on); document.getElementById('hints').innerHTML = on ? HINTS_PAD : HINTS_DEFAULT; if (!on) this.setFocus(null); }
+    const b = document.getElementById('bCtrl'); if (b) b.textContent = 'CONTROLS: ' + { auto: 'AUTO' + (this.using ? ' (🎮)' : ''), pad: 'CONTROLLER', phone: 'PHONE / TOUCH' }[this.pref];
+  },
+  get() { const g = navigator.getGamepads ? navigator.getGamepads() : []; for (const p of g) if (p && p.connected) return p; return null; },
+  poll(dt) {
+    const g = this.get(); if (!g) { this.x = this.y = 0; this.gun = this.burn = false; return; }
+    const B = i => !!(g.buttons[i] && (g.buttons[i].pressed || g.buttons[i].value > .5));
+    const now = g.buttons.map((b, i) => B(i)), pr = i => now[i] && !this.prev[i];
+    let ax = g.axes[0] || 0, ay = g.axes[1] || 0; const m = Math.hypot(ax, ay);
+    if (m < .16) { ax = ay = 0; } else { const k = Math.min(1, (m - .16) / .8) / m; ax *= k; ay *= k; }
+    const dx = (now[PB_.RIGHT] ? 1 : 0) - (now[PB_.LEFT] ? 1 : 0), dy = (now[PB_.DOWN] ? 1 : 0) - (now[PB_.UP] ? 1 : 0);
+    if (dx || dy) { ax = dx; ay = dy; }
+    this.x = ax; this.y = ay; this.gun = now[PB_.RT] || now[PB_.X]; this.burn = now[PB_.LT];
+    const any = now.some(Boolean) || m > .3;
+    if (any && !this.using) { this.using = true; this.apply(); this.prev = now; return; }
+    // where are the inputs going?
+    if (Repair.active) this.repairInput(dt, now, pr);
+    else if (!gameOn || titleVisible()) this.menuInput(dt, now, pr, ax, ay);
+    else {
+      if (any) takeControl();
+      if (pr(PB_.RB) || pr(PB_.B)) fire();
+      if (pr(PB_.LB) || pr(PB_.A)) barrelRoll();
+      if (pr(PB_.Y) && ready) cycleView();
+    }
+    this.prev = now;
+  },
+  focusables() { if ($('menu').hidden) return []; return [...$('menu').querySelectorAll('button, input')].filter(e => e.offsetParent && !e.closest('[hidden]')); },
+  setFocus(el) { if (this.focus) this.focus.classList.remove('pfocus'); this.focus = el; if (el) el.classList.add('pfocus'); },
+  menuInput(dt, now, pr, ax, ay) {
+    const list = this.focusables(); if (!list.length) return;
+    if (!this.focus || !list.includes(this.focus)) this.setFocus(list[0]);
+    this.navT -= dt;
+    const mx = Math.abs(ax) > .5 ? Math.sign(ax) : 0, my = Math.abs(ay) > .5 ? Math.sign(ay) : 0;
+    if ((mx || my) && this.navT <= 0) {
+      this.navT = .22; const a = this.focus.getBoundingClientRect(), ac = [a.x + a.width / 2, a.y + a.height / 2]; let best = null, bd = 1e9;
+      for (const e of list) { if (e === this.focus) continue; const r = e.getBoundingClientRect(), c = [r.x + r.width / 2, r.y + r.height / 2], vx = c[0] - ac[0], vy = c[1] - ac[1];
+        const along = vx * mx + vy * my; if (along <= 4) continue; const sc = along + Math.abs(mx ? vy : vx) * 2.5; if (sc < bd) { bd = sc; best = e; } }
+      if (best) this.setFocus(best);
+    } else if (!mx && !my) this.navT = 0;
+    if (pr(PB_.A)) { const e = this.focus; if (e.tagName === 'INPUT') e.focus(); else e.click(); }
+    if (pr(PB_.B)) { const back = list.find(e => e.dataset.a === 'back' || e.dataset.a === 'leave'); if (back) back.click(); }
+  },
+  cur: [100, 70],
+  repairInput(dt, now, pr) {
+    this.cur[0] = clamp(this.cur[0] + this.x * 130 * dt, 4, 196); this.cur[1] = clamp(this.cur[1] + this.y * 130 * dt, 20, 116);
+    if (pr(PB_.A)) Repair.downAt(this.cur[0], this.cur[1]);
+    if (!now[PB_.A] && this.prev[PB_.A]) Repair.up();
+  }
+};
+function titleVisible() { return !titleEl.classList.contains('gone'); }
+addEventListener('gamepadconnected', () => { Pad.using = true; Pad.apply(); });
+addEventListener('gamepaddisconnected', () => { if (!Pad.get()) { Pad.using = false; Pad.apply(); } });
+addEventListener('touchstart', () => { if (Pad.pref === 'auto' && Pad.using) { Pad.using = false; Pad.apply(); } }, { passive: true, capture: true });
 touchEl.querySelectorAll('button').forEach(bt => {
   const k = bt.dataset.k;
   bt.addEventListener('pointerdown', e => { e.preventDefault(); bt.classList.add('hot'); takeControl(); if (k === 'roll') barrelRoll(); if (k === 'fire') fire(); if (k === 'view' && ready) cycleView(); if (k === 'burn') touchBurn = true; if (k === 'gun') touchGun = true; });
@@ -2316,6 +2385,7 @@ const Net = {
 addEventListener('pagehide', () => { if (Net.mode !== 'solo') Net.reset(); });
 function saveName(n) { try { localStorage.setItem('patrolName', n); } catch (_) {} }
 try { const n = localStorage.getItem('patrolName'); if (n) $('mName').value = n; } catch (_) {}
+Pad.init();
 function banner(text) { countryEl.innerHTML = text; countryEl.classList.remove('show'); void countryEl.offsetWidth; countryEl.classList.add('show'); }
 function setRemote(id, name, slot, s) {
   let p = Net.players.get(id); if (!p) { p = { d: null }; Net.players.set(id, p); }
@@ -2349,6 +2419,7 @@ $('menu').addEventListener('click', e => {
   const a = b.dataset.a;
   if (a === 'solo') { Net.reset(); beginGame(); }
   else if (a === 'multi') { Menu.show('mMulti'); Menu.msg(''); }
+  else if (a === 'ctrl') Pad.cycle();
   else if (a === 'back') Menu.show('mMain');
   else if (a === 'host') Net.host();
   else if (a === 'join') Net.join($('mCode').value);
@@ -2455,8 +2526,9 @@ const Repair = {
   next() { this.ti++; if (this.ti >= this.tasks.length) { this.fin = 1.2; Sfx.tone(600, 1200, .3, .12); } else { this.begin(); Sfx.tone(800, 1000, .12, .1); } },
   say(t) { this.msg = t; this.msgT = 1.2; },
   pt(e) { const r = this.cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 200, (e.clientY - r.top) / r.height * 120]; },
-  down(e) {
-    if (!this.active || this.fin) return; const [x, y] = this.pt(e), s = this.st;
+  down(e) { const [x, y] = this.pt(e); this.downAt(x, y); },
+  downAt(x, y) {
+    if (!this.active || this.fin) return; const s = this.st;
     if (s.k === 'bolts') for (const b of s.bolts) if (b.n < 3 && Math.hypot(x - b.x, y - b.y) < 12) { b.n++; b.spin = 1; Sfx.tone(1400, 900, .05, .08, 0, 'square'); if (s.bolts.every(o => o.n >= 3)) this.next(); break; }
     if (s.k === 'wires') {
       for (let i = 0; i < 4; i++) if (!s.done.has(s.L[i].c) && Math.abs(x - 26) < 14 && Math.abs(y - s.L[i].y) < 8) { s.sel = i; Sfx.click(); return; }
@@ -2516,6 +2588,8 @@ const Repair = {
       for (let k = 0; k < 3; k++) pb.rect(gx + gw + 10, gy + 50 - k * 12, 10, 8, k < s.ok ? C('#6ce07c') : C('#4a4058'));
       pb.text(this.hold ? 'PUMPING...' : 'HOLD', gx + gw / 2, gy + gh + 5, C('#fbe6b8'), 1);
     }
+    if (Pad.on) { const [cx, cy] = Pad.cur.map(Math.round); for (const [cc, o] of [[C('#16131e'), 1], [C('#6ce07c'), 0]]) { pb.line(cx - 6, cy + o, cx - 2, cy + o, cc); pb.line(cx + 2, cy + o, cx + 6, cy + o, cc); pb.line(cx, cy - 6 + o, cx, cy - 2 + o, cc); pb.line(cx, cy + 2 + o, cx, cy + 6 + o, cc); }
+      pb.text('L STICK MOVE - A PRESS', 100, 112, C('#6ce07c'), 1); }
     if (this.msgT > 0) { pb.rect(60, 50, 80, 13, C('#16131e')); pb.text(this.msg, 100, 54, this.msg === 'GOOD!' ? C('#6ce07c') : C('#ff4a38'), 1); }
     this.blit();
   },
@@ -2689,7 +2763,7 @@ function updateBandit(a, dt) {
 function updateCombat(dt) {
   if (invuln > 0) invuln -= dt;
   // own guns
-  gunFiring = gameOn && !J.dead && (input.keys.has('KeyG') || touchGun);
+  gunFiring = gameOn && !J.dead && (input.keys.has('KeyG') || touchGun || Pad.gun);
   if (gunFiring) { gunAcc += dt * GUN_RATE; while (gunAcc > 1) { gunAcc--; const side = (gunAcc * 7 % 2) < 1 ? -.9 : .9; shootBullet(toWorld(J.b, J.r, designToLocal([side, .2, 7])), J.b.F, J.vel, meId(), .004); if (Math.random() < .5) Sfx.tone(160, 80, .05, .07, 0, 'square'); } }
   else gunAcc = 0;
   // bullets
@@ -2734,7 +2808,7 @@ function updateCombat(dt) {
   if (!J.dead && J.hp < 40 && Math.random() < dt * 25) spawn(PK.DSMOKE, J.r[0], J.r[1], J.r[2], rnd(-2, 2), rnd(0, 3), rnd(-2, 2), rnd(2, 4), 3, rnd(9, 15), .3, -.5);
   updateStages(dt); Repair.update(dt);
   if ((T * 4 | 0) !== (updateCombat.k || 0)) { updateCombat.k = T * 4 | 0; updateScore(); }
-  stickEl.classList.toggle('on', IS_TOUCH && gameOn && !J.dead && !Repair.active);
+  stickEl.classList.toggle('on', IS_TOUCH && !Pad.on && gameOn && !J.dead && !Repair.active);
   updateWarnings(dt);
 }
 function updateWarnings(dt) {
@@ -2803,7 +2877,7 @@ function drawCombatHUD(pb) {
 }
 function step(dt) {
   T += dt;
-  input.ab = (input.lmb && performance.now() - input.lmbT > 230) || touchBurn || input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
+  input.ab = (input.lmb && performance.now() - input.lmbT > 230) || touchBurn || Pad.burn || input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
   updateJet(dt); wrapWorld(); updateCombat(dt); updateWeapons(dt); updateSpray(dt); updateVolcanoes(dt); updateCountry(dt); updateParticles(dt); updateTrails(); updateCamera(dt); updateProps(); updateRemotes(dt); Net.tick(dt);
 }
 function frame(now) {
@@ -2812,6 +2886,7 @@ function frame(now) {
   const dt = clamp(raw, 0, .05);
   if (!ready) return;
   frameNo++;
+  Pad.poll(dt);
   step(dt); render(); drawUI(dt); Sfx.update();
   ema += (raw - ema) * .05; fpsEMA = 1 / Math.max(ema, 1e-3);
   if (AUTO && frameNo > 90 && !document.hidden) {
@@ -2853,7 +2928,7 @@ window.__patrol = {
   fire, barrelRoll, explode, takeControl,
   place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
   sim(sec) { for (let i = 0; i < sec * 20; i++) step(.05); },
-  hAt: (x, z) => hAt(x, z), J, input, TILT, STICK, Net, LIFE, STAGE, Repair, killMe, BANDITS, damageAI, enemies, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
+  hAt: (x, z) => hAt(x, z), J, input, TILT, STICK, Pad, Net, LIFE, STAGE, Repair, killMe, BANDITS, damageAI, enemies, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
   dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
 };
 })();

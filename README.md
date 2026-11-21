@@ -15,6 +15,12 @@ A 14 km map that wraps around, split into nine countries, each with its own land
 
 Forests and villages are real 3D trees and houses when you fly low. Borders show as dashed lines on the ground, and the country name appears when you fly into a new one.
 
+**Game controller** (e.g. GameSir X5 Lite, or any standard Xbox-layout pad)
+- Plug it in and press any button: the game switches to controller mode and hides all the touch buttons. Touch the screen to go back to phone controls. You can also force it on the home screen with **CONTROLS: AUTO / CONTROLLER / PHONE**.
+- Left stick or D-pad: steer (left/right turn, up/down climb/dive)
+- RT or X (hold): guns · RB or B: missile · LB or A: barrel roll · LT (hold): afterburner · Y: change view
+- Menus: stick / D-pad to move, A to press, B to go back. In the repair mini game, the stick moves a cursor and A presses.
+
 ## Solo and multiplayer
 
 The home screen has **SOLO** and **MULTIPLAYER**.
