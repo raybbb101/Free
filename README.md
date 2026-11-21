@@ -4,6 +4,8 @@ A pixel-art fighter jet over a world of nine countries at sunset, in WebGL2. Thr
 
 Open `index.html` in a browser to play. Works with GitHub Pages too.
 
+**Install it like an app**: on the home screen tap **⬇ INSTALL GAME** (Chrome/Android/PC), or use Chrome's menu → *Install app*. On iPhone: Safari → Share → *Add to Home Screen*. The installed game opens fullscreen in landscape and works offline (multiplayer still needs internet).
+
 ## The world
 
 A 14 km map that wraps around, split into nine countries, each with its own landscape:
