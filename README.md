@@ -48,6 +48,11 @@ You see each other's jets with name tags (markers at the screen edge point to fr
 - **Crashing**: once you're flying, nothing pulls you up. Hit the ground or water and you crash, then respawn after a few seconds.
 - **Solo**: bandits (red jets) hunt you, shoot and fire missiles. In **multiplayer** you fight each other.
 
+## Rings and balloons
+
+- **Gold rings** float all over the map. Fly through one for a 4-second speed boost. Boosts stack: fly through 2 or 3 close together for an even bigger burst. A used ring turns grey for a few seconds.
+- **Balloons** float around too. Touch one to pop it and slow the enemies down for 5 seconds (bandits in solo and co-op, the other pilots in PVP). Popped balloons come back after a while.
+
 ## Controls
 
 **Mouse / keyboard**

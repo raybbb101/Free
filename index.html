@@ -1027,7 +1027,7 @@ function meshVAO(data) {
 }
 const jetMesh = meshVAO(buildJet());
 /* ---------- 3D props (trees, houses), instanced near the camera ---------- */
-const PROP_COLS = ['#f08838', '#c83840', '#f0c040', '#3c5844', '#6c4c38', '#fff8f0', '#f0e0c0', '#c84838', '#5c6678', '#8a5a34', '#4a4058'];
+const PROP_COLS = ['#f08838', '#c83840', '#f0c040', '#3c5844', '#6c4c38', '#fff8f0', '#f0e0c0', '#c84838', '#5c6678', '#8a5a34', '#4a4058', '#ffd040', '#6ce07c', '#7ac8ff', '#ff6ab0'];
 const PROP_VS = `#version 300 es
 in vec3 aP; in float aK; in vec3 iP; in vec2 iSR; in vec3 iA; in vec3 iB;
 uniform mat4 uVP;
@@ -1091,6 +1091,17 @@ function propVAO(mesh, max) {
   gl.bindVertexArray(null);
   return { vao, ib, n: mesh.length / 4, data: new Float32Array(max * PROP_STRIDE), count: 0, max };
 }
+function buildRing() {   // upright torus in the XY plane, radius 1 (scaled per instance)
+  const B = propBuilder(), n = 20, m = 5, R0 = 1, r = .12;
+  const P = (i, j) => { const a = i / n * Math.PI * 2, b = j / m * Math.PI * 2, rr = R0 + Math.cos(b) * r; return [Math.cos(a) * rr, Math.sin(a) * rr, Math.sin(b) * r]; };
+  for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) B.quad(P(i, j), P(i + 1, j), P(i + 1, j + 1), P(i, j + 1), (i + j) % 2 ? 0 : 1);
+  return new Float32Array(B.d);
+}
+function buildBalloon() {
+  const B = propBuilder(); B.blob(0, 1.25, 0, .95, 1.05, 8, 0); B.cone(.28, .05, .45, 6, 0);
+  B.prism(.02, -1.3, .1, 3, 1); B.prism(.22, -1.65, -1.3, 4, 1); return new Float32Array(B.d);
+}
+const PICK = { ring: propVAO(buildRing(), 300), balloon: propVAO(buildBalloon(), 300) };
 const PROPS = { dec: propVAO(buildDeciduous(), MAX_TREES), con: propVAO(buildConifer(false), MAX_TREES), snow: propVAO(buildConifer(true), MAX_TREES), house: propVAO(buildHouse(), MAX_HOUSES) };
 const misMesh = meshVAO(buildMissile());
 
@@ -1626,8 +1637,9 @@ function updateJet(dt) {
   J.yaw = (J.yaw + J.turn * dt) % (Math.PI * 2); if (J.yaw < 0) J.yaw += Math.PI * 2;
   J.ab += ((input.ab ? 1 : 0) - J.ab) * (1 - Math.exp(-dt * 4));
   J.thr += ((.78 + J.ab * .22) - J.thr) * (1 - Math.exp(-dt * 5));
-  J.speed += ((160 + J.ab * 135) - J.speed) * dt * .5 - Math.sin(J.pitch) * 9.81 * dt * .6;
-  J.speed = clamp(J.speed, 95, 340);
+  const bst = boostBonus(), slw = J.slowT > 0;
+  J.speed += ((160 + J.ab * 135 + bst) * (slw ? .55 : 1) - J.speed) * dt * (bst > 0 ? 1.6 : .5) - Math.sin(J.pitch) * 9.81 * dt * .6;
+  J.speed = clamp(J.speed, 80, (slw ? 200 : 340) + bst);
   const cp = Math.cos(J.pitch);
   J.vel = [Math.sin(J.yaw) * cp * J.speed, Math.sin(J.pitch) * J.speed, -Math.cos(J.yaw) * cp * J.speed];
   J.x += J.vel[0] * dt; J.y += J.vel[1] * dt; J.z += J.vel[2] * dt; J.vy = J.vel[1];
@@ -1741,7 +1753,7 @@ function camFor(v, dt) {
     const b = ypr(chase.yaw, chase.pitch * .8 - .1, chase.roll);
     const p = [J.r[0] - b.F[0] * 28 + b.U[0] * 6.2, J.r[1] - b.F[1] * 28 + b.U[1] * 6.2, J.r[2] - b.F[2] * 28 + b.U[2] * 6.2];
     p[1] = Math.max(p[1], Math.max(hAt(p[0], p[2]), 0) + 3);
-    return { p, q: quatFromBasis(b), fov: (56 + J.ab * 7) * DEG };
+    return { p, q: quatFromBasis(b), fov: (56 + J.ab * 7 + Math.min(boostBonus() / 12, 12)) * DEG };
   }
   const b = J.b; return { p: [J.r[0] + b.U[0] * 1.05 + b.F[0] * 4.3, J.r[1] + b.U[1] * 1.05 + b.F[1] * 4.3, J.r[2] + b.U[2] * 1.05 + b.F[2] * 4.3], q: quatFromBasis(b), fov: (64 + J.ab * 4) * DEG };
 }
@@ -1825,7 +1837,7 @@ function render() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // meshes
   gl.depthFunc(gl.LESS);
-  drawProps(VP, c);
+  drawProps(VP, c); drawPickups();
   const pm = progMesh; gl.useProgram(pm.p); gl.uniformMatrix4fv(pm.u.uVP, false, VP); gl.uniform3fv(pm.u.uSun, SUN); gl.uniform3fv(pm.u.uCam, c.p);
   gl.uniform1f(pm.u.uShade, 1); gl.uniform3f(pm.u.uTint, 1, 1, 1);
   if (showJet) {
@@ -2463,7 +2475,7 @@ const lockedBy = new Map();
 const warnState = { incomingT: 9, beepT: 0, html: '' };
 J.hp = 100; J.dead = false; J.deadT = 0;
 const meId = () => Net.mode === 'solo' ? 'me' : Net.myId;
-const NET_EV = new Set(['hit', 'mhit', 'mlost', 'lock', 'kill', 'aihit', 'aikill', 'stage']);
+const NET_EV = new Set(['hit', 'mhit', 'mlost', 'lock', 'kill', 'aihit', 'aikill', 'stage', 'pop', 'slowai', 'slowp']);
 const coopClient = () => Net.mode === 'client' && Net.gameMode === 'coop';
 const coopHost = () => Net.mode === 'host' && Net.gameMode === 'coop';
 function nameOf(id) { if (id == null) return ''; if (id === meId()) return 'YOU'; if (String(id).startsWith('ai')) return 'BANDIT'; const p = Net.players.get(id); return p ? p.name : 'PILOT'; }
@@ -2709,6 +2721,9 @@ function netEvent(m) {
   else if (m.t === 'mhit') { const i = MIS.findIndex(q => q.mid === m.mid); if (i >= 0) MIS.splice(i, 1); airBurst(near(m.x, J.x), m.y, near(m.z, J.z), .7); updateMslUI(); }
   else if (m.t === 'mlost') { const q = MIS.find(q => q.mid === m.mid); if (q) q.lost = true; }
   else if (m.t === 'stage') stageEvent(m);
+  else if (m.t === 'pop') { PICKUPS.popped.set(m.id, T + 25); }
+  else if (m.t === 'slowai') { SLOWAI.t = Math.max(SLOWAI.t, m.dur); banner(`${nameOf(m.by)} popped a balloon<small>bandits slowed for ${m.dur} seconds</small>`); }
+  else if (m.t === 'slowp') { if (m.by !== Net.myId) { J.slowT = Math.max(J.slowT || 0, m.dur); slowBy = m.by; hitFX(); Sfx.tone(500, 160, .5, .12, 0, 'sawtooth'); } }
   else if (m.t === 'aihit') { if (Net.mode === 'host') { const a = BANDITS.find(b => b.id === m.id); if (a) damageAI(a, m.dmg, m.by); } }
   else if (m.t === 'aikill') {
     if (Net.mode !== 'client') return;
@@ -2750,8 +2765,8 @@ function updateBandit(a, dt) {
   for (const s of LOOK) { const dd = a.speed * s + 25, g = hAt(a.x + fh[0] * dd, a.z + fh[1] * dd); need = Math.max(need, Math.atan2(Math.max(g, 0) + 60 - a.y, dd)); }
   if (pitchT < need) pitchT = need + .05;
   a.bank += (bankT - a.bank) * (1 - Math.exp(-dt * 2.2)); a.pitch += (pitchT - a.pitch) * (1 - Math.exp(-dt * 1.8));
-  a.yaw = wrapPI(a.yaw + 9.81 * Math.tan(clamp(a.bank, -1.3, 1.3)) / Math.max(a.speed, 80) * 3 * dt);
-  const st = dist > 2500 ? 270 : dist < 450 ? 150 : 205; a.speed += (st - a.speed) * dt * .45;
+  a.yaw = wrapPI(a.yaw + 9.81 * Math.tan(clamp(a.bank, -1.3, 1.3)) / Math.max(a.speed, 80) * 3 * dt * (SLOWAI.t > 0 ? .6 : 1));
+  const st = (dist > 2500 ? 270 : dist < 450 ? 150 : 205) * (SLOWAI.t > 0 ? .45 : 1); a.speed += (st - a.speed) * dt * (SLOWAI.t > 0 ? 1.5 : .45);
   const cp = Math.cos(a.pitch); a.vel = [Math.sin(a.yaw) * cp * a.speed, Math.sin(a.pitch) * a.speed, -Math.cos(a.yaw) * cp * a.speed];
   a.x += a.vel[0] * dt; a.y += a.vel[1] * dt; a.z += a.vel[2] * dt;
   const gg = Math.max(hAt(a.x, a.z), 0) + 15; if (a.y < gg) a.y = gg;
@@ -2825,7 +2840,7 @@ function updateCombat(dt) {
     if (BANDITS.length < maxB && banditTimer <= 0) { const first = !banditSeq; spawnBandit(); banditTimer = rnd(9, 15); if (first) { spawnBandit(); banner('BANDITS INBOUND<small>G / GUN to shoot · lock on for missiles · ROLL to dodge</small>'); } }
   } else if (BANDITS.length) BANDITS.length = 0;
   if (!J.dead && J.hp < 40 && Math.random() < dt * 25) spawn(PK.DSMOKE, J.r[0], J.r[1], J.r[2], rnd(-2, 2), rnd(0, 3), rnd(-2, 2), rnd(2, 4), 3, rnd(9, 15), .3, -.5);
-  updateStages(dt); Repair.update(dt);
+  updateStages(dt); Repair.update(dt); updatePickups(dt);
   if ((T * 4 | 0) !== (updateCombat.k || 0)) { updateCombat.k = T * 4 | 0; updateScore(); }
   stickEl.classList.toggle('on', IS_TOUCH && !Pad.on && gameOn && !J.dead && !Repair.active);
   updateWarnings(dt);
@@ -2847,6 +2862,9 @@ function updateWarnings(dt) {
   if (!J.dead && T - lastHitT < 1.5) W2.push(['amb', 'UNDER FIRE']);
   if (!J.dead && J.hp < 40) W2.push(['red', 'DAMAGE ' + Math.max(0, Math.round(J.hp)) + '%']);
   if (LOCK.locked && !J.dead) W2.push(['grn', 'LOCKED — FIRE MISSILE']);
+  const bn = BOOST.list.length; if (bn && !J.dead) W2.push(['grn', `BOOST ${bn > 1 ? '×' + bn + ' ' : ''}${Math.max(...BOOST.list).toFixed(1)}s`]);
+  if (SLOWAI.t > 0 && (BANDITS.length || Net.gameMode === 'pvp' && Net.mode !== 'solo')) W2.push(['grn', `ENEMIES SLOWED ${SLOWAI.t.toFixed(1)}s`]);
+  if (J.slowT > 0 && !J.dead) W2.push(['amb blink', `SLOWED${slowBy ? ' BY ' + nameOf(slowBy) : ''} ${J.slowT.toFixed(1)}s`]);
   const html = W2.map(([c, t]) => `<div class="${c}">${t}</div>`).join('');
   if (html !== warnState.html) { warnState.html = html; $('warn').innerHTML = html; }
   // warning tones
@@ -2893,6 +2911,79 @@ function drawCombatHUD(pb) {
   pb.rect(bx - 1, by - 1, bw + 2, 6, CRD); pb.rect(bx, by, Math.round(bw * hp), 4, hp > .4 ? grn : red);
   pb.text('HP', bx + bw + 5, by, CRD); pb.text('HP', bx + bw + 4, by - 1, CR);
   if (invuln > 0 && (T * 4 % 1) < .5) { pb.text('SHIELD', bx, by + 7, CRD); }
+}
+/* =========================================================================
+   Speed rings and slow-down balloons, scattered all over the map
+   ========================================================================= */
+const PICK_CELL = 896, PICK_N = Math.round(WORLD / PICK_CELL);   // 16 x 16 cells, same layout for every player
+const BOOST = { list: [] }, SLOWAI = { t: 0 };
+const PICKUPS = { popped: new Map(), used: new Map(), near: [] };
+let slowBy = null; J.slowT = 0;
+const BAL_COLS = ['#ff4a38', '#ffd040', '#7ac8ff', '#ff6ab0', '#6ce07c'].map(hex3), RING_A = hex3('#ffd040'), RING_B = hex3('#fff4c0');
+function boostBonus() { return Math.min(BOOST.list.length, 3) * 70; }
+function pickupAt(cx, cz) {   // deterministic per cell (cx, cz in 0..PICK_N-1)
+  const h = hashJ(cx, cz, 91); if (h > .78) return null;
+  const kind = h < .5 ? 'ring' : 'balloon';
+  const x = (cx + .2 + hashJ(cx, cz, 92) * .6) * PICK_CELL, z = (cz + .2 + hashJ(cx, cz, 93) * .6) * PICK_CELL;
+  const g = Math.max(hAt(x, z), 0), y = g + 120 + hashJ(cx, cz, 94) * (kind === 'ring' ? 420 : 300);
+  return { id: cx + ',' + cz, kind, x, y, z, yaw: hashJ(cx, cz, 95) * 6.283, col: BAL_COLS[Math.floor(hashJ(cx, cz, 96) * 4.999)] };
+}
+let pickCache = null;
+function allPickups() { if (pickCache || !HM) return pickCache || []; pickCache = []; for (let z = 0; z < PICK_N; z++) for (let x = 0; x < PICK_N; x++) { const p = pickupAt(x, z); if (p) pickCache.push(p); } return pickCache; }
+function updatePickups(dt) {
+  for (let i = BOOST.list.length - 1; i >= 0; i--) { BOOST.list[i] -= dt; if (BOOST.list[i] <= 0) BOOST.list.splice(i, 1); }
+  if (SLOWAI.t > 0) SLOWAI.t -= dt; if (J.slowT > 0) J.slowT -= dt; else slowBy = null;
+  for (const [id, t] of PICKUPS.popped) if (T > t) PICKUPS.popped.delete(id);
+  for (const [id, t] of PICKUPS.used) if (T > t) PICKUPS.used.delete(id);
+  const near = PICKUPS.near; near.length = 0;
+  if (!CAM) return;
+  const prev = updatePickups.prev || J.r.slice(); updatePickups.prev = J.r.slice();
+  for (const p0 of allPickups()) {
+    const x = near_(p0.x, CAM.p[0]), z = near_(p0.z, CAM.p[2]);
+    if (Math.hypot(x - CAM.p[0], z - CAM.p[2]) > 5000) continue;
+    const p = { ...p0, x, z }; near.push(p);
+    if (!gameOn || J.dead) continue;
+    if (p.kind === 'ring' && !PICKUPS.used.has(p.id)) {
+      // did we fly through the ring's disc between last frame and now?
+      const nx = -Math.sin(p.yaw), nz = Math.cos(p.yaw), c = [p.x, p.y, p.z];
+      const da = (prev[0] - c[0]) * nx + (prev[2] - c[2]) * nz, db = (J.r[0] - c[0]) * nx + (J.r[2] - c[2]) * nz;
+      if ((da > 0) !== (db > 0) && Math.abs(da - db) > 1e-3) {
+        const t = da / (da - db), q = [prev[0] + (J.r[0] - prev[0]) * t, prev[1] + (J.r[1] - prev[1]) * t, prev[2] + (J.r[2] - prev[2]) * t];
+        if (len([q[0] - c[0], q[1] - c[1], q[2] - c[2]]) < 24) {
+          PICKUPS.used.set(p.id, T + 8); BOOST.list.push(4);
+          Sfx.tone(500, 1400, .35, .12); shake = Math.max(shake, .4);
+          for (let k = 0; k < 40; k++) { const a = k / 40 * 6.283; spawn(PK.FLAME, c[0] + Math.cos(a) * 22 * Math.cos(p.yaw), c[1] + Math.sin(a) * 22, c[2] + Math.cos(a) * 22 * Math.sin(p.yaw), rnd(-6, 6), rnd(-6, 6), rnd(-6, 6), .5, 3, 1.5); }
+        }
+      }
+    }
+    if (p.kind === 'balloon' && !PICKUPS.popped.has(p.id)) {
+      const by = p.y + Math.sin(T * .8 + p.x) * 3;
+      if (len([J.r[0] - p.x, J.r[1] - (by + 4), J.r[2] - p.z]) < 18) popBalloon(p, by);
+    }
+  }
+}
+const near_ = (v, ref) => v - WORLD * Math.round((v - ref) / WORLD);
+function popBalloon(p, by) {
+  PICKUPS.popped.set(p.id, T + 25); Net.event({ t: 'pop', id: p.id });
+  Sfx.tone(900, 200, .15, .14, 0, 'square'); Sfx.burst(3000, 600, .12, .2, 1);
+  for (let k = 0; k < 50; k++) spawn(PK.EMBER, p.x, by + 4, p.z, rnd(-30, 30), rnd(-10, 40), rnd(-30, 30), rnd(1, 2.5), 2, 2, .4, 15);
+  for (let k = 0; k < 12; k++) spawn(PK.SMOKE, p.x, by + 4, p.z, rnd(-8, 8), rnd(-4, 8), rnd(-8, 8), rnd(1, 2), 4, 12, .6, 0);
+  const dur = 5;
+  if (Net.mode !== 'solo' && Net.gameMode === 'pvp') { Net.event({ t: 'slowp', dur }); SLOWAI.t = Math.max(SLOWAI.t, dur); banner('BALLOON POPPED<small>other pilots slowed for ' + dur + ' seconds</small>'); }
+  else {
+    SLOWAI.t = Math.max(SLOWAI.t, dur);
+    if (coopClient() || coopHost()) Net.event({ t: 'slowai', dur });
+    banner('BALLOON POPPED<small>bandits slowed for ' + dur + ' seconds</small>');
+  }
+}
+function drawPickups() {
+  const R = PICK.ring, Bl = PICK.balloon; R.count = 0; Bl.count = 0;
+  for (const p of PICKUPS.near) {
+    if (p.kind === 'ring') { const used = PICKUPS.used.has(p.id); pushProp(R, p.x, p.y, p.z, 22, p.yaw, used ? hex3('#6a5e70') : RING_A, used ? hex3('#4a4058') : RING_B); }
+    else if (!PICKUPS.popped.has(p.id)) pushProp(Bl, p.x, p.y + Math.sin(T * .8 + p.x) * 3, p.z, 6, T * .3 + p.yaw, p.col, hex3('#8a5a34'));
+  }
+  const pp = progProp; gl.useProgram(pp.p);
+  for (const P of [R, Bl]) { if (!P.count) continue; gl.bindBuffer(gl.ARRAY_BUFFER, P.ib); gl.bufferSubData(gl.ARRAY_BUFFER, 0, P.data, 0, P.count * PROP_STRIDE); gl.bindVertexArray(P.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, P.n, P.count); }
 }
 function step(dt) {
   T += dt;
@@ -2947,7 +3038,7 @@ window.__patrol = {
   fire, barrelRoll, explode, takeControl,
   place(x, y, z, yaw, pitch = 0) { J.x = x; J.y = y; J.z = z; J.yaw = yaw; J.pitch = pitch; J.holdAlt = y; chase.yaw = yaw; chase.pitch = pitch; },
   sim(sec) { for (let i = 0; i < sec * 20; i++) step(.05); },
-  hAt: (x, z) => hAt(x, z), J, input, TILT, STICK, Pad, Net, LIFE, STAGE, Repair, killMe, BANDITS, damageAI, enemies, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
+  hAt: (x, z) => hAt(x, z), J, input, TILT, STICK, Pad, PICKUPS, BOOST, SLOWAI, allPickups, Net, LIFE, STAGE, Repair, killMe, BANDITS, damageAI, enemies, BUL, LOCK, MIS, spawnBandit, get kills() { return kills; }, setRemote, beginGame, get gameOn() { return gameOn; }, COUNTRIES, VOLCS, surfaceAt, PROPS, biomeAt, chan: (x, z, c) => chan(x, z, c),
   dbg: () => ({ cov: window.__cloud && (window.__cloud.filter(v => v > 5).length / window.__cloud.length), clen: window.__cloud && window.__cloud.length, uni: Object.keys(progWorld.u), cl: !!progWorld.u.uCl, cTex: !!cTex, err: gl.getError() })
 };
 })();
