@@ -34,7 +34,8 @@ Multiplayer is for 2 to 4 players online:
 
 **Lives and stages (multiplayer)**
 - Everyone has **3 lives**. Lose them all and you get one chance to **fix your jet**: a short repair mini game (tighten bolts, reconnect wires or pump the pressure gauge, two picked at random). Finish it to fly again with 1 life. Lose that too and you're out.
-- **CO-OP** has 3 stages: 3, 5, then 7 tougher bandits. Bandits don't come back once shot down. Clear a stage to move on; every new stage gives everyone 3 lives again. If the whole team is out, the stage restarts.
+- **Stages** (solo STAGES mode and multiplayer CO-OP): 12 stages, from *First Contact* (3 bandits) to *Final Patrol* (6 tough bandits + 3 aces). Some stages fire missiles faster, shoot more accurately, fly faster or come in swarms. **Aces** are gold jets with 320 HP that fly and shoot better. Solo saves your best stage so you can CONTINUE from it; SOLO → FREE FLIGHT is the old endless mode.
+- CO-OP: Bandits don't come back once shot down. Clear a stage to move on; every new stage gives everyone 3 lives again. If the whole team is out, the stage restarts.
 - **PVP**: last pilot still flying wins the round, then a new round starts.
 
 You see each other's jets with name tags (markers at the screen edge point to friends who are out of view), and each other's missiles. It connects players directly using PeerJS, so it needs an internet connection; some strict networks may block it.

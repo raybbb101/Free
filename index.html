@@ -122,6 +122,7 @@ body.pad #touch, body.pad #stick, body.pad #tiltBtn{display:none!important}
   <div id="bar"><div></div></div>
   <div id="prompt">Shaping the land&hellip;</div>
   <div id="menu" hidden>
+    <div class="mcol" id="mSolo" hidden><div class="lbl">SOLO</div><button data-a="solo-stages" id="bStages">STAGES</button><button data-a="solo-cont" id="bCont" hidden>CONTINUE</button><button data-a="solo-free">FREE FLIGHT</button><div class="lbl" id="sBest"></div><button data-a="back" class="sm">BACK</button></div>
     <div class="mcol" id="mMain"><div class="mrow"><button data-a="solo">SOLO</button><button data-a="multi">MULTIPLAYER</button></div><button data-a="ctrl" class="sm" id="bCtrl">CONTROLS: AUTO</button><button data-a="install" class="sm" id="bInstall" hidden>⬇ INSTALL GAME</button><div class="msg" id="iMsg"></div></div>
     <div class="mcol" id="mMulti" hidden>
       <input id="mName" maxlength="10" placeholder="YOUR NAME" autocomplete="off" spellcheck="false">
@@ -1850,6 +1851,7 @@ function render() {
   if (BANDITS.length) {
     gl.bindVertexArray(jetMesh.vao); gl.uniform3f(pm.u.uTint, 1.18, .62, .55);
     for (const a of BANDITS) { if (a.dead) continue;
+      if (a.ace) gl.uniform3f(pm.u.uTint, 1.25, 1.05, .45); else gl.uniform3f(pm.u.uTint, 1.18, .62, .55);
       gl.uniformMatrix4fv(pm.u.uM, false, modelMat(a.b, [a.x, a.y, a.z])); gl.uniform3fv(pm.u.uGlow, hex3('#ff9020')); gl.drawArrays(gl.TRIANGLES, 0, jetMesh.n); }
     gl.uniform3f(pm.u.uTint, 1, 1, 1);
   }
@@ -2232,7 +2234,7 @@ const pips = [...document.querySelectorAll('#msl i')];
 const SLOT_COLORS = ['#ffd890', '#6ce07c', '#7ac8ff', '#ff8a6a'];
 const $ = id => document.getElementById(id);
 const Menu = {
-  show(panel) { titleEl.classList.toggle('compact', panel !== 'mMain'); $('menu').hidden = false; for (const id of ['mMain', 'mMulti', 'mLobby']) $(id).hidden = id !== panel; },
+  show(panel) { titleEl.classList.toggle('compact', panel !== 'mMain'); $('menu').hidden = false; for (const id of ['mMain', 'mSolo', 'mMulti', 'mLobby']) $(id).hidden = id !== panel; },
   msg(t) { $('mMsg').textContent = t || ''; }, lmsg(t) { $('lMsg').textContent = t || ''; }
 };
 function beginGame() {
@@ -2384,7 +2386,7 @@ const Net = {
       for (const [id] of this.conns) { const p = this.players.get(id); if (p && now - p.t > 12000) this.hostDrop(id); }
       const l = [{ id: this.myId, n: this.name, sl: 0, ...this.myState() }];
       for (const [id, c] of this.conns) { const p = this.players.get(id); if (p) l.push({ id, n: c.name, sl: c.slot, ...p.tgt }); }
-      const msg = { t: 's', l, st: [STAGE.n, BANDITS.filter(a => !a.dead).length, STAGE.phase] }; if (this.gameMode === 'coop') msg.ai = BANDITS.map(a => [a.id, Math.round(a.x * 10) / 10, Math.round(a.y * 10) / 10, Math.round(a.z * 10) / 10, +a.yaw.toFixed(3), +a.pitch.toFixed(3), +(a.rollVis || 0).toFixed(3), Math.round(a.hp), a.dead ? 1 : 0, Math.round(a.vel[0]), Math.round(a.vel[1]), Math.round(a.vel[2]), a.burst > 0 ? 1 : 0]);
+      const msg = { t: 's', l, st: [STAGE.n, BANDITS.filter(a => !a.dead).length, STAGE.phase] }; if (this.gameMode === 'coop') msg.ai = BANDITS.map(a => [a.id, Math.round(a.x * 10) / 10, Math.round(a.y * 10) / 10, Math.round(a.z * 10) / 10, +a.yaw.toFixed(3), +a.pitch.toFixed(3), +(a.rollVis || 0).toFixed(3), Math.round(a.hp), a.dead ? 1 : 0, Math.round(a.vel[0]), Math.round(a.vel[1]), Math.round(a.vel[2]), a.burst > 0 ? 1 : 0, a.ace ? 1 : 0]);
       this.broadcast(msg);
     }
   },
@@ -2447,11 +2449,13 @@ function updateRemotes(dt) {
 $('menu').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; e.stopPropagation(); b.blur();
   const a = b.dataset.a;
-  if (a === 'solo') { Net.reset(); beginGame(); }
+  if (a === 'solo') { Menu.show('mSolo'); const b = bestStage(); $('bCont').hidden = b < 2; $('bCont').textContent = 'CONTINUE · STAGE ' + b; $('sBest').textContent = b > 1 ? 'best: stage ' + b + ' of ' + STAGES.length : STAGES.length + ' stages · 3 lives'; }
+  else if (a === 'solo-free') { Net.reset(); SOLOST.on = false; beginGame(); }
+  else if (a === 'solo-stages' || a === 'solo-cont') { Net.reset(); SOLOST.on = true; SOLOST.from = a === 'solo-cont' ? bestStage() : 1; beginGame(); }
   else if (a === 'multi') { Menu.show('mMulti'); Menu.msg(''); }
   else if (a === 'ctrl') Pad.cycle();
   else if (a === 'install') Install.go();
-  else if (a === 'back') Menu.show('mMain');
+  else if (a === 'back') { Menu.show('mMain'); Menu.msg(''); }
   else if (a === 'host') Net.host();
   else if (a === 'join') Net.join($('mCode').value);
   else if (a === 'start') Net.start();
@@ -2482,16 +2486,33 @@ function nameOf(id) { if (id == null) return ''; if (id === meId()) return 'YOU'
 function updateScore() {
   if (!gameOn) { $('score').textContent = ''; return; }
   const parts = [];
-  if (coopHost() || coopClient()) { if (STAGE.n) parts.push(`STAGE ${STAGE.n}/${STAGES.length}` + (STAGE.phase === 'fight' ? ` · ${STAGE.left ?? BANDITS.filter(a => !a.dead).length} LEFT` : '')); }
+  if (coopHost() || coopClient() || (Net.mode === 'solo' && SOLOST.on)) { if (STAGE.n) parts.push(`STAGE ${STAGE.n}/${STAGES.length}` + (STAGE.phase === 'fight' ? ` · ${coopClient() ? STAGE.left : BANDITS.filter(a => !a.dead).length} LEFT` : '')); }
   if (livesOn()) parts.push('♥'.repeat(LIFE.lives) + '♡'.repeat(Math.max(0, 3 - LIFE.lives)));
   parts.push(`KILLS ${kills}`);
   $('score').textContent = parts.join(' · ');
 }
 /* ---------- lives (multiplayer), stages (co-op), jet repair mini game ---------- */
-const STAGES = [{ n: 3, hp: 100 }, { n: 5, hp: 110 }, { n: 7, hp: 150 }];
+const STAGES = [
+  { name: 'First Contact',   n: 3, hp: 100 },
+  { name: 'Twin Squads',     n: 4, hp: 100 },
+  { name: 'Lake Ambush',     n: 5, hp: 110 },
+  { name: 'Missile Rain',    n: 4, hp: 110, mis: [3, 7] },
+  { name: 'The Ace',         n: 2, hp: 110, ace: 1 },
+  { name: 'Swarm',           n: 9, hp: 70, spd: 1.08 },
+  { name: 'Heavy Wing',      n: 5, hp: 180 },
+  { name: 'Sharpshooters',   n: 5, hp: 120, aim: .005, gun: [.6, 1.4] },
+  { name: 'Fast Movers',     n: 6, hp: 110, spd: 1.25, mis: [6, 10] },
+  { name: 'Ace Squadron',    n: 3, hp: 130, ace: 2, mis: [5, 9] },
+  { name: 'Storm Front',     n: 8, hp: 140, mis: [4, 8], aim: .007 },
+  { name: 'Final Patrol',    n: 6, hp: 160, ace: 3, spd: 1.12, mis: [4, 8], aim: .006 }
+];
+const SOLOST = { on: false, from: 1 };
+const stageRunner = () => coopHost() || (Net.mode === 'solo' && SOLOST.on);
+function bestStage() { try { return clamp(+localStorage.getItem('patrolBestStage') || 1, 1, STAGES.length); } catch (_) { return 1; } }
+function saveBest(n) { try { if (n > bestStage()) localStorage.setItem('patrolBestStage', n); } catch (_) {} }
 const STAGE = { n: 0, phase: 'idle', t: 0, left: 0, winner: null };
 const LIFE = { lives: 3, repairUsed: false, out: false };
-const livesOn = () => Net.mode !== 'solo' && Net.started;
+const livesOn = () => (Net.mode !== 'solo' && Net.started) || (Net.mode === 'solo' && SOLOST.on && gameOn);
 function resetLives() { LIFE.lives = 3; LIFE.repairUsed = false; LIFE.out = false; if (Repair.active) Repair.close(); if (J.dead) respawnMe(); updateScore(); }
 function afterDeath() {
   if (!livesOn()) { respawnMe(); return; }
@@ -2502,8 +2523,8 @@ function afterDeath() {
   banner('OUT OF LIVES<small>' + (Net.gameMode === 'coop' ? 'you come back next stage' : 'watching the rest of the match') + '</small>');
 }
 function stageEvent(m) {
-  if (m.phase === 'start') { STAGE.n = m.n; STAGE.phase = 'fight'; resetLives(); banner(`STAGE ${m.n}<small>${STAGES[m.n - 1].n} bandits · no reinforcements · 3 lives each</small>`); }
-  else if (m.phase === 'clear') { STAGE.phase = 'clear'; banner(`STAGE ${m.n} CLEAR<small>${m.n < STAGES.length ? 'next stage in 6 seconds' : ''}</small>`); }
+  if (m.phase === 'start') { const S = STAGES[m.n - 1]; STAGE.n = m.n; STAGE.phase = 'fight'; resetLives(); if (Net.mode === 'solo') saveBest(m.n); banner(`STAGE ${m.n} · ${S.name.toUpperCase()}<small>${S.n} bandits${S.ace ? ' + ' + S.ace + (S.ace > 1 ? ' aces' : ' ace') : ''} · no reinforcements · 3 lives</small>`); }
+  else if (m.phase === 'clear') { STAGE.phase = 'clear'; if (Net.mode === 'solo') saveBest(m.n + 1); banner(`STAGE ${m.n} CLEAR<small>${m.n < STAGES.length ? 'next stage in 6 seconds' : ''}</small>`); }
   else if (m.phase === 'fail') { STAGE.phase = 'fail'; banner(`MISSION FAILED<small>retrying stage ${m.n} in 6 seconds</small>`); }
   else if (m.phase === 'win') { STAGE.phase = 'win'; banner('MISSION COMPLETE<small>all bandits destroyed · restarting in 12 seconds</small>'); }
   else if (m.phase === 'pvpwin') { STAGE.phase = 'over'; banner((m.winner ? `${nameOf(m.winner)} WINS` : 'DRAW') + '<small>new round in 8 seconds</small>'); }
@@ -2512,15 +2533,16 @@ function stageEvent(m) {
 }
 function hostEvent(m) { stageEvent(m); Net.event(m); }
 function playersOut() {   // [total, stillFlying ids]
+  if (Net.mode === 'solo') return [1, LIFE.out ? [] : ['me']];
   const ids = []; let total = 1; if (!LIFE.out) ids.push(Net.myId);
   for (const [id, pl] of Net.players) { if (!Net.conns.has(id)) continue; total++; if (!(pl.tgt && pl.tgt.out)) ids.push(id); }
   return [total, ids];
 }
 function updateStages(dt) {
-  if (Net.mode !== 'host' || !Net.started) return;
+  if (!(Net.mode === 'host' && Net.started) && !(Net.mode === 'solo' && SOLOST.on && gameOn && input.moved)) return;
   STAGE.t -= dt;
-  if (Net.gameMode === 'coop') {
-    if (STAGE.phase === 'idle') { STAGE.phase = 'wait'; STAGE.t = 4; STAGE.next = 1; }
+  if (Net.gameMode === 'coop' || Net.mode === 'solo') {
+    if (STAGE.phase === 'idle') { STAGE.phase = 'wait'; STAGE.t = 3; STAGE.next = Net.mode === 'solo' ? SOLOST.from : 1; }
     if (STAGE.phase === 'wait' && STAGE.t <= 0) startStage(STAGE.next);
     else if (STAGE.phase === 'fight') {
       const [, flying] = playersOut();
@@ -2537,7 +2559,11 @@ function updateStages(dt) {
 }
 function startStage(n) {
   BANDITS.length = 0; const S = STAGES[n - 1];
-  for (let i = 0; i < S.n; i++) { spawnBandit(); const a = BANDITS[BANDITS.length - 1]; a.hp = S.hp; a.misCd = rnd(6, 14); }
+  for (let i = 0; i < S.n + (S.ace || 0); i++) {
+    spawnBandit(); const a = BANDITS[BANDITS.length - 1], ace = i >= S.n;
+    a.hp = ace ? 320 : S.hp; a.ace = ace; a.spd = (S.spd || 1) * (ace ? 1.18 : 1); a.aim = ace ? .004 : (S.aim || .01);
+    a.mis = ace ? [4, 7] : (S.mis || [10, 16]); a.gun = ace ? [.5, 1.2] : (S.gun || [1.5, 3]); a.misCd = rnd(a.mis[0], a.mis[1]) * .7;
+  }
   hostEvent({ t: 'stage', phase: 'start', n });
 }
 const Repair = {
@@ -2637,7 +2663,7 @@ function targetPos(id) {
 }
 function enemies() {
   const out = [];
-  for (const a of BANDITS) if (!a.dead) out.push({ id: a.id, p: [a.x, a.y, a.z], ai: a, color: '#ff5a48', name: 'BANDIT' });
+  for (const a of BANDITS) if (!a.dead) out.push({ id: a.id, p: [a.x, a.y, a.z], ai: a, color: a.ace ? '#ffd040' : '#ff5a48', name: a.ace ? 'ACE' : 'BANDIT' });
   if (Net.gameMode === 'pvp') for (const [id, pl] of Net.players) if (pl.d && pl.tgt && !pl.tgt.dead) out.push({ id, p: [pl.d.x, pl.d.y, pl.d.z], color: SLOT_COLORS[pl.slot] || '#ffffff', name: pl.name });
   return out;
 }
@@ -2687,7 +2713,7 @@ function damageAI(a, dmg, by) {
   a.hp -= dmg;
   if (a.hp <= 0) {
     a.dead = true; a.deadT = 1; airBurst(a.x, a.y, a.z, 1.3);
-    if (by === meId()) { kills++; updateScore(); banner('BANDIT DOWN<small>' + kills + (kills === 1 ? ' kill' : ' kills') + '</small>'); }
+    if (by === meId()) { kills++; updateScore(); banner((a.ace ? 'ACE DOWN' : 'BANDIT DOWN') + '<small>' + kills + (kills === 1 ? ' kill' : ' kills') + '</small>'); }
     else if (Net.mode !== 'solo') banner(nameOf(by) + ' downed a BANDIT');
     if (coopHost()) Net.event({ t: 'aikill', id: a.id, killer: by, x: a.x, y: a.y, z: a.z });
   }
@@ -2695,10 +2721,10 @@ function damageAI(a, dmg, by) {
 function syncBandits(list) {
   const now = performance.now(), seen = new Set();
   for (const e of list) {
-    const [id, x, y, z, yaw, pitch, roll, hp, dead, vx, vy, vz, g] = e; seen.add(id);
+    const [id, x, y, z, yaw, pitch, roll, hp, dead, vx, vy, vz, g, ace] = e; seen.add(id);
     let a = BANDITS.find(b => b.id === id);
     if (!a) { a = { id, x: near(x, J.x), y, z: near(z, J.z), yaw, pitch, rollVis: roll, hp, dead: !!dead, vel: [vx, vy, vz], lockT: 0, b: ypr(yaw, pitch, roll), mirror: true }; BANDITS.push(a); }
-    a.tgt = { x, y, z, yaw, pitch, roll, vx, vy, vz, g }; a.t = now; a.hp = hp;
+    a.tgt = { x, y, z, yaw, pitch, roll, vx, vy, vz, g }; a.t = now; a.hp = hp; a.ace = !!ace;
     if (dead && !a.dead) a.dead = true;
   }
   for (let i = BANDITS.length - 1; i >= 0; i--) if (!seen.has(BANDITS[i].id)) BANDITS.splice(i, 1);
@@ -2766,7 +2792,7 @@ function updateBandit(a, dt) {
   if (pitchT < need) pitchT = need + .05;
   a.bank += (bankT - a.bank) * (1 - Math.exp(-dt * 2.2)); a.pitch += (pitchT - a.pitch) * (1 - Math.exp(-dt * 1.8));
   a.yaw = wrapPI(a.yaw + 9.81 * Math.tan(clamp(a.bank, -1.3, 1.3)) / Math.max(a.speed, 80) * 3 * dt * (SLOWAI.t > 0 ? .6 : 1));
-  const st = (dist > 2500 ? 270 : dist < 450 ? 150 : 205) * (SLOWAI.t > 0 ? .45 : 1); a.speed += (st - a.speed) * dt * (SLOWAI.t > 0 ? 1.5 : .45);
+  const st = (dist > 2500 ? 270 : dist < 450 ? 150 : 205) * (a.spd || 1) * (SLOWAI.t > 0 ? .45 : 1); a.speed += (st - a.speed) * dt * (SLOWAI.t > 0 ? 1.5 : .45);
   const cp = Math.cos(a.pitch); a.vel = [Math.sin(a.yaw) * cp * a.speed, Math.sin(a.pitch) * a.speed, -Math.cos(a.yaw) * cp * a.speed];
   a.x += a.vel[0] * dt; a.y += a.vel[1] * dt; a.z += a.vel[2] * dt;
   const gg = Math.max(hAt(a.x, a.z), 0) + 15; if (a.y < gg) a.y = gg;
@@ -2779,13 +2805,13 @@ function updateBandit(a, dt) {
   const to = norm([tp[0] - a.x, tp[1] - a.y, tp[2] - a.z]), c = dot(to, a.b.F), rd = len([tp[0] - a.x, tp[1] - a.y, tp[2] - a.z]);
   // guns: short bursts when lined up
   a.gunCd -= dt;
-  if (a.burst > 0) { a.burst -= dt; a.acc = (a.acc || 0) + dt * 11; while (a.acc > 1) { a.acc--; shootBullet([a.x + a.b.F[0] * 9, a.y + a.b.F[1] * 9, a.z + a.b.F[2] * 9], a.b.F, a.vel, a.id, .01); } }
-  else if (a.gunCd <= 0 && rd < 900 && c > .992) { a.burst = .7; a.gunCd = rnd(1.5, 3); }
+  if (a.burst > 0) { a.burst -= dt; a.acc = (a.acc || 0) + dt * 11; while (a.acc > 1) { a.acc--; shootBullet([a.x + a.b.F[0] * 9, a.y + a.b.F[1] * 9, a.z + a.b.F[2] * 9], a.b.F, a.vel, a.id, a.aim || .01); } }
+  else if (a.gunCd <= 0 && rd < 900 && c > .992) { a.burst = a.ace ? 1 : .7; a.gunCd = a.gun ? rnd(a.gun[0], a.gun[1]) : rnd(1.5, 3); }
   // missiles: lock for 2.2 s, then launch
   a.misCd -= dt;
   if (a.misCd <= 0 && rd < 3600 && rd > 500 && c > .88) a.lockT += dt; else a.lockT = Math.max(0, a.lockT - dt * 1.5);
   if (a.lockT >= 2.2) {
-    a.lockT = 0; a.misCd = rnd(10, 16);
+    a.lockT = 0; a.misCd = a.mis ? rnd(a.mis[0], a.mis[1]) : rnd(10, 16);
     const p = [a.x - a.b.U[0] * 2, a.y - a.b.U[1] * 2, a.z - a.b.U[2] * 2], v = [a.vel[0] - a.b.U[0] * 7, a.vel[1] - a.b.U[1] * 7, a.vel[2] - a.b.U[2] * 7];
     const mid = a.id + ':' + (++misSeq);
     MIS.push({ p, v, age: 0, tgt: tp.slice(), lp: p.slice(), tid: a.tgtId, mid, owner: a.id });
@@ -2830,13 +2856,14 @@ function updateCombat(dt) {
   if (lockTo !== LOCK.sent) { if (LOCK.sent) Net.event({ t: 'lock', to: LOCK.sent, on: false }); if (lockTo) Net.event({ t: 'lock', to: lockTo, on: true }); LOCK.sent = lockTo; }
   // bandits (solo)
   const aiRun = gameOn && (Net.mode === 'solo' ? input.moved : coopHost() && Net.started);
+  if (Net.mode === 'solo' && SOLOST.on) banditTimer = 99;
   if (coopClient()) updateMirrors(dt);
   else if (aiRun) {
     for (const a of BANDITS) updateBandit(a, dt);
     for (let i = BANDITS.length - 1; i >= 0; i--) if (BANDITS[i].dead && BANDITS[i].deadT <= 0) BANDITS.splice(i, 1);
     banditTimer -= dt;
     if (Net.mode !== 'solo') banditTimer = 99;
-    const maxB = Net.mode === 'solo' ? 3 : 0;
+    const maxB = Net.mode === 'solo' && !SOLOST.on ? 3 : 0;
     if (BANDITS.length < maxB && banditTimer <= 0) { const first = !banditSeq; spawnBandit(); banditTimer = rnd(9, 15); if (first) { spawnBandit(); banner('BANDITS INBOUND<small>G / GUN to shoot · lock on for missiles · ROLL to dodge</small>'); } }
   } else if (BANDITS.length) BANDITS.length = 0;
   if (!J.dead && J.hp < 40 && Math.random() < dt * 25) spawn(PK.DSMOKE, J.r[0], J.r[1], J.r[2], rnd(-2, 2), rnd(0, 3), rnd(-2, 2), rnd(2, 4), 3, rnd(9, 15), .3, -.5);
@@ -2896,10 +2923,11 @@ function drawCombatHUD(pb) {
     const pr = project(f.p, 1); if (!pr || pr[0] < 0 || pr[0] > W || pr[1] < 30 || pr[1] > H) continue;
     const dd = len([f.p[0] - CAM.p[0], f.p[1] - CAM.p[1], f.p[2] - CAM.p[2]]), isL = f.id === LOCK.id;
     let s = clamp(Math.round(2600 / (dd + 50)), 5, 22); if (isL && !LOCK.locked) s = Math.round(s + (1 - LOCK.t / .8) * 14);
-    const c = isL && LOCK.locked ? grn : (f.ai ? red : col(f.color)), x0 = Math.round(pr[0] - s), y0 = Math.round(pr[1] - s), x1 = Math.round(pr[0] + s), y1 = Math.round(pr[1] + s), k = Math.max(2, Math.round(s / 2));
+    const c = isL && LOCK.locked ? grn : (f.ai ? (f.ai.ace ? col('#ffd040') : red) : col(f.color)), x0 = Math.round(pr[0] - s), y0 = Math.round(pr[1] - s), x1 = Math.round(pr[0] + s), y1 = Math.round(pr[1] + s), k = Math.max(2, Math.round(s / 2));
     for (const [cc, o] of [[CRD, 1], [c, 0]]) { pb.line(x0, y0 + o, x0 + k, y0 + o, cc); pb.line(x0, y0 + o, x0, y0 + k + o, cc); pb.line(x1, y0 + o, x1 - k, y0 + o, cc); pb.line(x1, y0 + o, x1, y0 + k + o, cc);
       pb.line(x0, y1 + o, x0 + k, y1 + o, cc); pb.line(x0, y1 + o, x0, y1 - k + o, cc); pb.line(x1, y1 + o, x1 - k, y1 + o, cc); pb.line(x1, y1 + o, x1, y1 - k + o, cc); }
-    if (f.ai) { const t = isL && LOCK.locked ? 'LOCK' : (dd > 400 ? (dd / 1000).toFixed(1) + 'KM' : 'BANDIT'); pb.text(t, pr[0] + 1, y1 + 4, CRD, 1); pb.text(t, pr[0], y1 + 3, c, 1); }
+    if (f.ai && f.ai.ace && !(isL && LOCK.locked)) { /* gold box */ }
+    if (f.ai) { const t = isL && LOCK.locked ? 'LOCK' : (dd > 400 ? (f.ai.ace ? 'ACE ' : '') + (dd / 1000).toFixed(1) + 'KM' : f.ai.ace ? 'ACE' : 'BANDIT'); pb.text(t, pr[0] + 1, y1 + 4, CRD, 1); pb.text(t, pr[0], y1 + 3, c, 1); }
     else if (isL && LOCK.locked) { pb.text('LOCK', pr[0] + 1, y1 + 4, CRD, 1); pb.text('LOCK', pr[0], y1 + 3, c, 1); }
   }
   // off-screen bandit markers
